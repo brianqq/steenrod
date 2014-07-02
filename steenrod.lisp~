@@ -1,0 +1,4 @@
+(defpackage steenrod
+  (:use #:cl #:optima))
+
+(in-package #:steenrod)
