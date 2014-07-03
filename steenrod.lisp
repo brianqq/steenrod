@@ -32,7 +32,7 @@
 (defun dim (simplex) (1- (length (verts simplex))))
 
 (defun standard-simp (dim)
-  (apply vector (loop for i from 0 to dim collect i)))
+  (make-simplex (apply #'vector (loop for i from 0 to dim collect i))))
 
 (def-morphism boundary (simplex)
   "Computes the boundary of a simplex"
@@ -60,7 +60,7 @@
 (defun left (tensor)
   (second tensor))
 (defun right (tensor)
-  (third tensor)))
+  (third tensor))
 
 (def-morphism flip (simp)
   (match simp
@@ -74,7 +74,7 @@
     (_ nil)))
 
 (defun op-p (op)
-  (or (member op '(+ -)) (numberp op))))
+  (or (member op '(+ -)) (numberp op)))
 
 (defun make-callable (fn-exp)
   "Interprets a function as defined by a symbolic linear combination of functions"
@@ -104,10 +104,10 @@
 
 (defun tidy (expr)
   (match expr
+    ((list '+) 0)
+    ((list* '+ (list* '+ cdr) rest )  (append '(+) rest cdr)) ;must generalize
     ((list '+ x) x)
-    ((list '+ (list* '+ rest)) (cons '+ rest))
-    ((list* '+ rest)
-     (aif (remove 0 (mapcar #'tidy rest)) (cons '+ it) 0))
+    ((list* '+ rest) (cons '+ (remove 0 (mapcar #'tidy rest))))
     ((list 0 _) 0)
     ((list 1 x) (tidy x))
     ((guard (list scalar 0) (numberp scalar)) 0)
