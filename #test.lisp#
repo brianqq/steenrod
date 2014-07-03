@@ -1,0 +1,12 @@
+(in-package #:steenrod)
+
+(check () (make-tensor 0 'a))
+(check () (make-tensor 'a 0))
+(check () (make-tensor 'a 'b))
+
+(check () (tensor-p 0))
+
+(check ()
+  (funcall (extend-morphism #'1+) '(+ ((* 5) 3) 2)))
+(check ()
+  (funcall (make-callable '(+ 1+ 1-)) 3))
