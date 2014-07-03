@@ -13,6 +13,10 @@
 	      ,@body))
      #'self))
 
+(defmacro aif (test true &optional false)
+  `(let ((it ,test))
+     (if it ,true ,false)))
+
 (defmacro def-morphism (name (arg) &body body)
   `(defun ,name (,arg)
      (labels ((,name (,arg)
@@ -98,8 +102,24 @@
      ((guard (list* op rest) (op-p op)) (cons op (mapcar #'self rest)))
      (_ (funcall fn expr)))))
 
+(defun tidy (expr)
+  (match expr
+    ((list '+ x) x)
+    ((list '+ (list* '+ rest)) (cons '+ rest))
+    ((list* '+ rest)
+     (aif (remove 0 (mapcar #'tidy rest)) (cons '+ it) 0))
+    ((list 0 _) 0)
+    ((list 1 x) (tidy x))
+    ((guard (list scalar 0) (numberp scalar)) 0)
+    ((guard (list scalar (list* '+ rest)) (numberp scalar))  ;distributivity
+     (cons '+ (mapcar (lambda (x) (list scalar (tidy x))) rest)))
+    ((guard (list s1 (list s2 thing)) (and (numberp s1) (numberp s2)))
+     (list (* s1 s2) (tidy thing)))
+    ((list* car cdr) (if cdr (cons car (mapcar #'tidy cdr))))
+    (_ expr)))
+
 (defun call (fn-exp sexp)
-  (funcall (extend-morphism (make-callable fn-exp)) sexp))
+  (tidy (funcall (extend-morphism (make-callable fn-exp)) sexp)))
 
 (defun small-phi (k simp)
   (let ((dim (dim simp)))
