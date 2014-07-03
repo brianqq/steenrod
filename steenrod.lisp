@@ -174,7 +174,8 @@
 
 (defparameter *cache* (make-hash-table :test 'equalp))
 
-;;; memoized! should i use a function?
+;;; memoized! should i use a library?
+;;; how much will mapping down to a standard simplex, computing, going back up help? 
 (defun xi-base (ei simp)
   (aif2 (gethash (list ei simp) *cache*) it
 	(setf (gethash (list ei simp) *cache*)
