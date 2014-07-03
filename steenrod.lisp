@@ -1,5 +1,5 @@
 (defpackage steenrod
-  (:use #:cl #:optima #:iterate #:fare-memoization #:checkl))
+  (:use #:cl #:optima #:iterate #:checkl))
 
 (in-package #:steenrod)
 
@@ -16,6 +16,12 @@
 (defmacro aif (test true &optional false)
   `(let ((it ,test))
      (if it ,true ,false)))
+
+(defmacro aif2 (test true &optional false)
+  (let ((var (gensym)))
+   `(multiple-value-bind (it ,var) ,test
+	(if (or it ,var) ,true ,false))))
+
 
 (defmacro def-morphism (name (arg) &body body)
   `(defun ,name (,arg)
@@ -40,10 +46,10 @@
     (if (<= (length verts) 1) 0
      (cons '+
 	   (iterate (for v in-vector verts)
-		    (for sgn first nil then (not sgn))
+		    (for sgn first 0 then (1+ sgn))
 		    (collect
 			(let ((face (make-simplex (remove v verts))))
-			  (if sgn `(-1 ,face) face))))))))
+			  (sgn sgn face))))))))
 
 (defun dummy-coef (arg)
   (match arg
@@ -102,12 +108,32 @@
      ((guard (list* op rest) (op-p op)) (cons op (mapcar #'self rest)))
      (_ (funcall fn expr)))))
 
+(defun plus-p (expr)
+  (match expr
+    ((list* '+ _) t)
+    (_ nil)))
+
+;;; this isn't working 
+(defun combine-like-terms (terms)
+  (match terms
+    ((list* head _) 
+     (let* ((terms (mapcar #'dummy-coef terms))
+	    (likep (lambda (arg) (equal (second arg) (second head)))))
+       (cons (cons (reduce #'+ (mapcar #'car (remove-if-not likep terms)))
+		   (second head))
+	     (combine-like-terms (remove-if likep terms)))))
+    (nil )))
+
 (defun tidy (expr)
   (match expr
     ((list '+) 0)
-    ((list* '+ (list* '+ cdr) rest )  (append '(+) rest cdr)) ;must generalize
     ((list '+ x) x)
-    ((list* '+ rest) (cons '+ (remove 0 (mapcar #'tidy rest))))
+    ((list* '+ rest)
+     (cons '+
+	   (let ((rest (remove 0 (mapcar #'tidy rest))))
+	     (mapcar #'tidy
+		     (append (mapcan #'cdr (remove-if-not #'plus-p rest))
+			     (remove-if #'plus-p rest))))))
     ((list 0 _) 0)
     ((list 1 x) (tidy x))
     ((guard (list scalar 0) (numberp scalar)) 0)
@@ -115,6 +141,10 @@
      (cons '+ (mapcar (lambda (x) (list scalar (tidy x))) rest)))
     ((guard (list s1 (list s2 thing)) (and (numberp s1) (numberp s2)))
      (list (* s1 s2) (tidy thing)))
+    ((list :tensor (list* '+ sum) x)
+     (cons '+ (mapcar (lambda (summand) (make-tensor summand x)) sum )))
+    ((list :tensor x (list* '+ sum))
+     (cons '+ (mapcar (lambda (summand) (make-tensor x summand)) sum )))
     ((list* car cdr) (if cdr (cons car (mapcar #'tidy cdr))))
     (_ expr)))
 
@@ -138,22 +168,33 @@
 	id-tensor-phi)))
 
 (defun sgn (num exp)
-  (if (evenp num) exp (list '-1 exp)))
+  ;; (if (evenp num) exp (list '-1 exp))
+  exp)
 
+
+(defparameter *cache* (make-hash-table :test 'equalp))
+
+;;; memoized! should i use a function?
 (defun xi-base (ei simp)
-  (let* ((dim (dim simp))
-	 (phi-k (partial #'big-phi (dim simp))))
-    (match (list ei dim)
-      ((list 0 0) (make-tensor simp simp))
-      ((list _ 0) 0)
-      ((list 0 _) (sgn dim (call phi-k (xi 0 (boundary simp)))))
-      (_ (let ((left-recur (xi (1- ei) simp))
-	       (right-recur (xi ei (boundary simp))))
-	   (list '+
-		 (list '+ (call phi-k left-recur) (call phi-k (flip left-recur)))
-		 (sgn dim (call phi-k right-recur))))))))
+  (aif2 (gethash (list ei simp) *cache*) it
+	(setf (gethash (list ei simp) *cache*)
+	 (let* ((dim (dim simp))
+		(phi-k (partial #'big-phi (aref (verts simp) (dim simp)))))
+	   (match (list ei dim)
+	     ((list 0 0) (make-tensor simp simp))
+	     ((list _ 0) 0)
+	     ((list 0 _) (sgn dim (call phi-k (xi 0 (boundary simp)))))
+	     (_ (let ((left-recur (xi (1- ei) simp))
+		      (right-recur (xi ei (boundary simp))))
+		  (list '+
+			(list '+ (call phi-k left-recur) (call phi-k (flip left-recur)))
+			(sgn dim (call phi-k right-recur)))))))))))
 
 (defun xi (ei exp)
-  (call (partial #'xi-base ei) exp))
+  (call (partial 'xi-base ei) exp))
 
 
+;;; todo---
+;;; make tensor products distribute
+;;; make combining like terms work
+;;; make coefficients work
