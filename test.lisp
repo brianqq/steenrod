@@ -19,3 +19,7 @@
   (standard-simp 0))
 (check ()
   (standard-simp 1))
+(check ()
+  (dim (make-simplex #(0))))
+(check ()
+  (boundary (make-simplex #(0))))

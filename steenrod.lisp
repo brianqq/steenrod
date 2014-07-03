@@ -33,12 +33,13 @@
 (defun boundary (simplex)
   "Computes the boundary of a simplex"
   (let ((verts (verts simplex)))
-    (cons '+
-	  (iterate (for v in-vector verts)
-		   (for sgn first nil then (not sgn))
-		   (collect
-		       (let ((face (make-simplex (remove v verts))))
-			   (if sgn `(- ,face) face)))))))
+    (if (<= (length verts) 1) 0
+     (cons '+
+	   (iterate (for v in-vector verts)
+		    (for sgn first nil then (not sgn))
+		    (collect
+			(let ((face (make-simplex (remove v verts))))
+			  (if sgn `(- ,face) face))))))))
 
 (defun make-tensor (arg1 arg2)
   (match (list arg1 arg2)
@@ -94,37 +95,40 @@
 
 (defun small-phi (k simp)
   (let ((dim (dim simp)))
-    (if (< dim k) 			;is this check sufficient
+    (if (= k (aref (verts simp) dim))		;is this check sufficient
 	(let* ((sgn (oddp dim))
  	       (verts (verts simp))
 	       (face (make-simplex (concatenate 'vector verts (list k)))))
 	  (if sgn `(- ,face) face))
 	0)))
 
-(defun big-phi (k expr)
-  (let ((phi-k (partial #'small-phi k)))
-   (+ (call (make-tensor #'identity phi-k) expr)
-      (if (= (dim (right expr)) 0)
-	  (call
-	   (make-tensor phi-k
-			(lambda (x) (declare (ignore x)) (dim expr)))
-	   expr)
-	  0))))
+(def-morphism big-phi (base)
+  (let* ((k (dim (left base)))
+	 (phi-k (partial #'small-phi k))
+	 (id-tensor-phi (call (make-tensor #'identity phi-k) base)))
+    (if (zerop k)
+	(list '+ id-tensor-phi (make-tensor (funcall phi-k (left base))
+					    (make-simplex (vector k))))
+	id-tensor-phi)))
+
+(defun sgn (num exp)
+  (if (oddp num) (list '- exp) exp))
 
 (defun xi-base (ei simp)
-  (let* ((dim (dim simp))
-	 (st-simp ()))
-   (if (= ei 0)
-       (if (= dim 0)
-	   (make-tensor simp simp)
-	   0)
+  (declare (optimize (debug 3)))
+  (let* ((dim (dim simp)))
+    (match (list ei dim)
+      ((list 0 0) (make-tensor simp simp))
+      ((list _ 0) 0)
+      ((list 0 _) (sgn dim (big-phi (xi 0 (boundary simp)))))
+      (_
        (let ((left-recur (xi (1- ei) simp))
-	     (right-recur (xi ei (boundary simp))))
+	     (right-recur (sgn dim (xi ei (boundary simp)))))
 	 (list '+
-	       (big-phi dim (list '+ left-recur (flip left-recur)))
-	       (if (oddp dim)
-		   (- right-recur)
-		   right-recur))))))
+	       (big-phi (list '+ left-recur (flip left-recur)))
+	       right-recur))))))
 
 (defun xi (ei exp)
   (call (partial #'xi-base ei) exp))
+
+
