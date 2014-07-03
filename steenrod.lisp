@@ -30,7 +30,7 @@
 (defun standard-simp (dim)
   (apply vector (loop for i from 0 to dim collect i)))
 
-(defun boundary (simplex)
+(def-morphism boundary (simplex)
   "Computes the boundary of a simplex"
   (let ((verts (verts simplex)))
     (if (<= (length verts) 1) 0
@@ -41,10 +41,17 @@
 			(let ((face (make-simplex (remove v verts))))
 			  (if sgn `(-1 ,face) face))))))))
 
+(defun dummy-coef (arg)
+  (match arg
+    ((guard (list k _) (numberp k)) arg)
+    (_ (list 1 arg))))
+
 (defun make-tensor (arg1 arg2)
-  (match (list arg1 arg2)
-    ((or (list 0 _) (list _ 0)) 0)
-    (_ (list :tensor arg1 arg2))))
+  (let ((arg1 (dummy-coef arg1))
+	(arg2 (dummy-coef arg2)))
+   (match (list arg1 arg2)
+     ((or (list (list k 0) _) (list _ (list j 0))) 0)
+     ((list (list k x) (list z y)) (list (* k z) (list :tensor x y))))))
 
 (defun left (tensor)
   (second tensor))
@@ -87,6 +94,7 @@
   "Extends a function on a basis to a morphism"
   (afn (expr)
    (match expr
+     (0 0)
      ((guard (list* op rest) (op-p op)) (cons op (mapcar #'self rest)))
      (_ (funcall fn expr)))))
 
@@ -102,7 +110,7 @@
 	  (sgn (1+ dim) face)))))
 
 (defun big-phi (k base)
-  (let* ((phi-k (partial #'small-phi k))
+  (let* ((phi-k (partial #'call (partial #'small-phi k)))
 	 (id-tensor-phi (call (make-tensor #'identity phi-k) base)))
     (if (zerop (dim (right base)))
 	(list '+ id-tensor-phi (make-tensor (funcall phi-k (left base))
@@ -120,10 +128,10 @@
       ((list _ 0) 0)
       ((list 0 _) (sgn dim (call phi-k (xi 0 (boundary simp)))))
       (_ (let ((left-recur (xi (1- ei) simp))
-	       (right-recur (sgn dim (xi ei (boundary simp)))))
+	       (right-recur (xi ei (boundary simp))))
 	   (list '+
-		 (call phi-k (list '+ left-recur (flip left-recur)))
-		 right-recur))))))
+		 (list '+ (call phi-k left-recur) (call phi-k (flip left-recur)))
+		 (sgn dim (call phi-k right-recur))))))))
 
 (defun xi (ei exp)
   (call (partial #'xi-base ei) exp))
