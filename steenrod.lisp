@@ -39,7 +39,7 @@
 		    (for sgn first nil then (not sgn))
 		    (collect
 			(let ((face (make-simplex (remove v verts))))
-			  (if sgn `(- ,face) face))))))))
+			  (if sgn `(-1 ,face) face))))))))
 
 (defun make-tensor (arg1 arg2)
   (match (list arg1 arg2)
@@ -96,37 +96,34 @@
 (defun small-phi (k simp)
   (let ((dim (dim simp)))
     (if (= k (aref (verts simp) dim))		;is this check sufficient
-	(let* ((sgn (oddp dim))
- 	       (verts (verts simp))
-	       (face (make-simplex (concatenate 'vector verts (list k)))))
-	  (if sgn `(- ,face) face))
-	0)))
+	0
+	(let* ((verts (verts simp))
+	      (face (make-simplex (concatenate 'vector verts (list k)))))
+	  (sgn (1+ dim) face)))))
 
-(def-morphism big-phi (base)
-  (let* ((k (dim (left base)))
-	 (phi-k (partial #'small-phi k))
+(defun big-phi (k base)
+  (let* ((phi-k (partial #'small-phi k))
 	 (id-tensor-phi (call (make-tensor #'identity phi-k) base)))
-    (if (zerop k)
+    (if (zerop (dim (right base)))
 	(list '+ id-tensor-phi (make-tensor (funcall phi-k (left base))
 					    (make-simplex (vector k))))
 	id-tensor-phi)))
 
 (defun sgn (num exp)
-  (if (oddp num) (list '- exp) exp))
+  (if (evenp num) exp (list '-1 exp)))
 
 (defun xi-base (ei simp)
-  (declare (optimize (debug 3)))
-  (let* ((dim (dim simp)))
+  (let* ((dim (dim simp))
+	 (phi-k (partial #'big-phi (dim simp))))
     (match (list ei dim)
       ((list 0 0) (make-tensor simp simp))
       ((list _ 0) 0)
-      ((list 0 _) (sgn dim (big-phi (xi 0 (boundary simp)))))
-      (_
-       (let ((left-recur (xi (1- ei) simp))
-	     (right-recur (sgn dim (xi ei (boundary simp)))))
-	 (list '+
-	       (big-phi (list '+ left-recur (flip left-recur)))
-	       right-recur))))))
+      ((list 0 _) (sgn dim (call phi-k (xi 0 (boundary simp)))))
+      (_ (let ((left-recur (xi (1- ei) simp))
+	       (right-recur (sgn dim (xi ei (boundary simp)))))
+	   (list '+
+		 (call phi-k (list '+ left-recur (flip left-recur)))
+		 right-recur))))))
 
 (defun xi (ei exp)
   (call (partial #'xi-base ei) exp))
