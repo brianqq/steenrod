@@ -8,6 +8,14 @@
   (lambda (&rest inner-args)
     (apply fn args inner-args)))
 
+(defun comp (&rest fns)
+  (match fns
+    (nil #'identity)
+    ((list f) f)
+    ((list f g) (lambda (&rest args)
+		  (funcall f (apply g args))))
+    (_ (reduce #'comp fns :from-end t)))) ;:from-end? is that right?
+
 (defmacro afn (args &body body)
   `(labels ((self (,@args)
 	      ,@body))
@@ -22,23 +30,20 @@
    `(multiple-value-bind (it ,var) ,test
 	(if (or it ,var) ,true ,false))))
 
-
 (defmacro def-morphism (name (arg) &body body)
   `(defun ,name (,arg)
      (labels ((,name (,arg)
 		,@body))
        (call #',name ,arg))))
 
-(defun make-simplex (seq)
-  (list :simplex seq))
+(defun make-simplex (seq) (list :simplex seq))
 
-(defun verts (simplex)
-  (second simplex))
+(defun verts (simplex) (second simplex))
 
 (defun dim (simplex) (1- (length (verts simplex))))
 
 (defun standard-simp (dim)
-  (make-simplex (apply #'vector (loop for i from 0 to dim collect i))))
+  (make-simplex (apply #'vector (iterate (for i from 0 to dim) (collect i)))))
 
 (def-morphism boundary (simplex)
   "Computes the boundary of a simplex"
@@ -63,15 +68,13 @@
      ((or (list (list k 0) _) (list _ (list j 0))) 0)
      ((list (list k x) (list z y)) (list (* k z) (list :tensor x y))))))
 
-(defun left (tensor)
-  (second tensor))
-(defun right (tensor)
-  (third tensor))
+(defun left (tensor) (second tensor))
+(defun right (tensor) (third tensor))
 
 (def-morphism flip (simp)
   (match simp
     (0 0)
-    ((list :tensor x y) (make-tensor y x))))
+    ((list :tensor x y) (sgn (* (dim x) (dim y)) (make-tensor y x)))))
 
 (defun tensor-p (x)
   (match x
@@ -115,14 +118,14 @@
 
 ;;; this isn't working 
 (defun combine-like-terms (terms)
-  (match terms
-    ((list* head _) 
-     (let* ((terms (mapcar #'dummy-coef terms))
-	    (likep (lambda (arg) (equal (second arg) (second head)))))
-       (cons (cons (reduce #'+ (mapcar #'car (remove-if-not likep terms)))
-		   (second head))
-	     (combine-like-terms (remove-if likep terms)))))
-    (nil )))
+  (let ((terms (mapcar #'dummy-coef terms)))
+   (match terms
+     ((list* head _) 
+      (let ((likep (lambda (arg) (equal (second arg) (second head)))))
+	(cons (list (reduce #'+ (mapcar #'car (remove-if-not likep terms)))
+		    (second head))
+	      (combine-like-terms (remove-if likep terms)))))
+     (nil nil))))
 
 (defun tidy (expr)
   (match expr
@@ -130,12 +133,11 @@
     ((list '+ x) x)
     ((list* '+ rest)
      (cons '+
-	   (let ((rest (remove 0 (mapcar #'tidy rest))))
-	     (mapcar #'tidy
-		     (append (mapcan #'cdr (remove-if-not #'plus-p rest))
-			     (remove-if #'plus-p rest))))))
+	   (let ((nonzero (remove 0 (mapcar #'tidy rest))))
+	     (combine-like-terms
+	      (append (mapcan #'cdr (remove-if-not #'plus-p nonzero))
+		      (remove-if #'plus-p nonzero))))))
     ((list 0 _) 0)
-    ((list 1 x) (tidy x))
     ((guard (list scalar 0) (numberp scalar)) 0)
     ((guard (list scalar (list* '+ rest)) (numberp scalar))  ;distributivity
      (cons '+ (mapcar (lambda (x) (list scalar (tidy x))) rest)))
@@ -148,8 +150,12 @@
     ((list* car cdr) (if cdr (cons car (mapcar #'tidy cdr))))
     (_ expr)))
 
+(defun mega-tidy (lst)
+	    (let ((tidied (tidy lst)))
+	      (if (equalp lst tidied) lst (mega-tidy tidied))))
+
 (defun call (fn-exp sexp)
-  (tidy (funcall (extend-morphism (make-callable fn-exp)) sexp)))
+  (mega-tidy (funcall (extend-morphism (make-callable fn-exp)) sexp)))
 
 (defun small-phi (k simp)
   (let ((dim (dim simp)))
@@ -161,41 +167,85 @@
 
 (defun big-phi (k base)
   (let* ((phi-k (partial #'call (partial #'small-phi k)))
-	 (id-tensor-phi (call (make-tensor #'identity phi-k) base)))
+	 (id-tensor-phi (sgn (dim (left base))
+			     (call (make-tensor #'identity phi-k) base)))) ;whaaat
+    ;; justin smith did this though
     (if (zerop (dim (right base)))
-	(list '+ id-tensor-phi (make-tensor (funcall phi-k (left base))
-					    (make-simplex (vector k))))
+	(list '+ id-tensor-phi
+	      (make-tensor (funcall phi-k (left base)) ;already uses call
+			   (make-simplex (vector k))))
 	id-tensor-phi)))
 
 (defun sgn (num exp)
-  ;; (if (evenp num) exp (list '-1 exp))
-  exp)
-
+  (if (evenp num) exp (list '-1 exp))
+  ;; exp
+  )
 
 (defparameter *cache* (make-hash-table :test 'equalp))
 
-;;; memoized! should i use a library?
-;;; how much will mapping down to a standard simplex, computing, going back up help? 
+(defun alexander-whitney (simp)
+  (flet ((simpify (list) (make-simplex (apply #'vector list))))
+    (cons '+
+     (iterate (for n from 0 to (dim simp))
+	      (collect
+		  (make-tensor
+		   (simpify (iterate (for i from 0 to n) (collect i)))
+		   (simpify (iterate (for i from n to (dim simp))
+				     (collect i)))))))))
+
 (defun xi-base (ei simp)
+  (let* ((dim (dim simp))
+	 (phi-k (partial #'big-phi (aref (verts simp) (dim simp)))))
+    (match (list ei dim)
+      ((list 0 0) (make-tensor simp simp))
+      ((list _ 0) 0)
+      ((list  0 _) (alexander-whitney simp))
+      ((list 1 _)
+       (let ((left-recur (xi (1- ei) simp))
+	     (right-recur (xi ei (call #'boundary simp))))
+	 (list '+
+	       (call phi-k (list '+ left-recur (sgn ei (flip left-recur)))) ;phi on outside
+	       (sgn ei (call phi-k right-recur))))))))  ;sgn dim? sgn ei? sgn k?
+
+(defun on-simplices (fn expr)
+  (match expr
+    ((list :simplex _)
+     (funcall fn expr))
+    ((list* op rest)
+     (cons op (mapcar (partial #'on-simplices fn) rest)))))
+
+(defun map-simplex (simp expr)
+  (on-simplices 
+   (lambda (reduced-simplex)
+     (make-simplex (map 'vector (lambda (x) (aref (verts simp) x))
+			(verts reduced-simplex))))
+   expr))
+
+(defun xi-base-memo (ei simp)
   (aif2 (gethash (list ei simp) *cache*) it
 	(setf (gethash (list ei simp) *cache*)
-	 (let* ((dim (dim simp))
-		(phi-k (partial #'big-phi (aref (verts simp) (dim simp)))))
-	   (match (list ei dim)
-	     ((list 0 0) (make-tensor simp simp))
-	     ((list _ 0) 0)
-	     ((list 0 _) (sgn dim (call phi-k (xi 0 (boundary simp)))))
-	     (_ (let ((left-recur (xi (1- ei) simp))
-		      (right-recur (xi ei (boundary simp))))
-		  (list '+
-			(list '+ (call phi-k left-recur) (call phi-k (flip left-recur)))
-			(sgn dim (call phi-k right-recur)))))))))))
+	      (xi-base ei simp))))
+
+;;; this makes a huge difference in terms of performance
+(defun xi-base-uniformed (ei simp)
+  (map-simplex
+   simp
+   (let ((simp (standard-simp (dim simp))))
+     (mega-tidy (xi-base-memo ei simp)))))
 
 (defun xi (ei exp)
-  (call (partial 'xi-base ei) exp))
+  (call (partial 'xi-base-uniformed ei) exp))
 
+(defun verts-to-bitstring (verts)
+  (iterate (for i in-vector verts) (sum (ash 1 (1- i)))))
 
+;;; to convert to a different base 
+;; (let ((cl:*print-radix* t)
+;; 		(cl:*print-base* 16))
+;; 	    (pprint (on-simplices (comp #'verts-to-bitstring #'verts)
+;; 				  (xi 0 (standard-simp 30)))))
 ;;; todo---
-;;; make tensor products distribute
-;;; make combining like terms work
 ;;; make coefficients work
+;;; simplices as bitstrings? This will be necessary for represntation eventually
+;;; perfect hash simplices -> bitstrings? 
+;;; increased efficiency -- calculate alexander-whitney, special case to it in xi
