@@ -82,8 +82,7 @@
     (0 t)
     (_ nil)))
 
-(defun op-p (op)
-  (or (member op '(+ -)) (numberp op)))
+(defun op-p (op) (or (member op '(+ -)) (numberp op)))
 
 (defun make-callable (fn-exp)
   "Interprets a function as defined by a symbolic linear combination of functions"
@@ -96,8 +95,13 @@
 	   (0 0)
 	   ((list :tensor y z) (make-tensor (funcall f y)
 					    (funcall g z)))
+
 	   ((guard (list* op expr) (op-p op))	;linearity
 	    (list op (mapcar #'self expr)))))))
+    ((list* 'comp fs) (reduce #'comp
+    			     (mapcar (lambda (f)
+    				       (lambda (x) (call f x)))
+    				     fs)))
     ((guard (list* op exp) (op-p op))
      (lambda (arg)
        (cons op (mapcar (lambda (f) (funcall (make-callable f) arg)) exp))))
@@ -151,8 +155,8 @@
     (_ expr)))
 
 (defun mega-tidy (lst)
-	    (let ((tidied (tidy lst)))
-	      (if (equalp lst tidied) lst (mega-tidy tidied))))
+  (let ((tidied (tidy lst)))
+    (if (equalp lst tidied) lst (mega-tidy tidied))))
 
 (defun call (fn-exp sexp)
   (mega-tidy (funcall (extend-morphism (make-callable fn-exp)) sexp)))
@@ -199,7 +203,7 @@
     (match (list ei dim)
       ((list 0 0) (make-tensor simp simp))
       ((list _ 0) 0)
-      ((list  0 _) (alexander-whitney simp))
+      ((list 0 _) (alexander-whitney simp))
       ((list _ _)
        (let ((left-recur (xi (1- ei) simp))
 	     (right-recur (xi ei (call #'boundary simp))))
