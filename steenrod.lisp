@@ -200,7 +200,7 @@
       ((list 0 0) (make-tensor simp simp))
       ((list _ 0) 0)
       ((list  0 _) (alexander-whitney simp))
-      ((list 1 _)
+      ((list _ _)
        (let ((left-recur (xi (1- ei) simp))
 	     (right-recur (xi ei (call #'boundary simp))))
 	 (list '+
@@ -231,7 +231,7 @@
   (map-simplex
    simp
    (let ((simp (standard-simp (dim simp))))
-     (mega-tidy (xi-base-memo ei simp)))))
+     (xi-base-memo ei simp))))
 
 (defun xi (ei exp)
   (call (partial 'xi-base-uniformed ei) exp))
