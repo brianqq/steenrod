@@ -1,8 +1,8 @@
 (defpackage steenrod
   (:use #:cl #:optima #:iterate #:checkl))
-
 (in-package #:steenrod)
 
+;;; som utilities
 (defun partial (fn args)
   "Partially applies fn to args. Returns the function (fn arg1 arg2 ... argn _____): x1...xk -> (fn arg1 ... argn x1 ... xk)."
   (lambda (&rest inner-args)
@@ -25,23 +25,20 @@
   `(let ((it ,test))
      (if it ,true ,false)))
 
-(defmacro aif2 (test true &optional false)
-  (let ((var (gensym)))
-   `(multiple-value-bind (it ,var) ,test
-	(if (or it ,var) ,true ,false))))
+(defmacro sif2 (test true &optional false)
+  (alexandria:with-gensyms (one two)
+    `(symbol-macrolet ((sit ,test))
+       (multiple-value-bind (,one ,two) ,test
+	   (if (or ,one ,two)
+	       ,true ,false)))))
 
-(defmacro def-morphism (name (arg) &body body)
-  `(defun ,name (,arg)
-     (labels ((,name (,arg)
-		,@body))
-       (call #',name ,arg))))
+(defun sgn (num exp)
+  "Computes (-1)^num and uses it as the coefficient of exp."
+  (if (evenp num) exp (list '-1 exp)))
 
 (defun make-simplex (seq) (list :simplex seq))
-
 (defun verts (simplex) (second simplex))
-
 (defun dim (simplex) (1- (length (verts simplex))))
-
 (defun standard-simp (dim)
   (make-simplex (apply #'vector (iterate (for i from 0 to dim) (collect i)))))
 
@@ -53,20 +50,26 @@
 	   (iterate (for v in-vector verts)
 		    (for sgn first 0 then (1+ sgn))
 		    (collect
-			(let ((face (make-simplex (remove v verts))))
-			  (sgn sgn face))))))))
+			(sgn sgn (make-simplex (remove v verts)))))))))
+;;; boundary relies on stuff defined much later
 
-(defun dummy-coef (arg)
-  (match arg
-    ((guard (list k _) (numberp k)) arg)
-    (_ (list 1 arg))))
+;; (defun make-tensor (arg1 arg2)
+;;   (let ((arg1 (dummy-coef arg1))
+;; 	(arg2 (dummy-coef arg2)))
+;;    (match (list arg1 arg2)
+;;      ((or (list (list k 0) _) (list _ (list j 0))) 0)
+;;      ((list (list k x) (list z y)) (list (* k z) (list :tensor x y))))))
 
-(defun make-tensor (arg1 arg2)
-  (let ((arg1 (dummy-coef arg1))
-	(arg2 (dummy-coef arg2)))
-   (match (list arg1 arg2)
-     ((or (list (list k 0) _) (list _ (list j 0))) 0)
-     ((list (list k x) (list z y)) (list (* k z) (list :tensor x y))))))
+;;; arbitrary arity tensor products
+(defun make-tensor (&rest args)
+  (let ((args (mapcar #'dummy-coef args)))
+    (if (some (lambda (x)
+		(destructuring-bind (_ vec) x
+		  (declare (ignorable _))
+		  (eql vec 0)))
+	   args)
+	0 (list (reduce #'* (mapcar #'car args))
+		(cons :tensor (mapcar #'second args))))))
 
 (defun left (tensor) (second tensor))
 (defun right (tensor) (third tensor))
@@ -76,56 +79,35 @@
     (0 0)
     ((list :tensor x y) (sgn (* (dim x) (dim y)) (make-tensor y x)))))
 
+;;; fixed arity = 2 
 (defun tensor-p (x)
   (match x
     ((list :tensor _ _) t)
     (0 t)
     (_ nil)))
 
-(defun op-p (op) (or (member op '(+ -)) (numberp op)))
+(defun gen-tensor-p (x)
+  (match x
+    ((list* :tensor _) t)
+    (0 t)
+    (_ nil)))
 
-(defun make-callable (fn-exp)
-  "Interprets a function as defined by a symbolic linear combination of functions"
-  (match fn-exp
-    ((list :tensor f g)
-     (afn (x)
-       (let ((f (make-callable f))
-	     (g (make-callable g)))
-	 (match x
-	   (0 0)
-	   ((list :tensor y z) (make-tensor (funcall f y)
-					    (funcall g z)))
-
-	   ((guard (list* op expr) (op-p op))	;linearity
-	    (list op (mapcar #'self expr)))))))
-    ((list* 'comp fs) (reduce #'comp
-    			     (mapcar (lambda (f)
-    				       (lambda (x) (call f x)))
-    				     fs)))
-    ((guard (list* op exp) (op-p op))
-     (lambda (arg)
-       (cons op (mapcar (lambda (f) (funcall (make-callable f) arg)) exp))))
-    (_ fn-exp)))
-
-(defun extend-morphism (fn)
-  "Extends a function on a basis to a morphism"
-  (afn (expr)
-   (match expr
-     (0 0)
-     ((guard (list* op rest) (op-p op)) (cons op (mapcar #'self rest)))
-     (_ (funcall fn expr)))))
-
+;;; working up to tidy
 (defun plus-p (expr)
   (match expr
     ((list* '+ _) t)
     (_ nil)))
 
-;;; this isn't working 
+(defun dummy-coef (arg)
+  (match arg
+    ((guard (list k _) (numberp k)) arg)
+    (_ (list 1 arg))))
+
 (defun combine-like-terms (terms)
   (let ((terms (mapcar #'dummy-coef terms)))
    (match terms
      ((list* head _) 
-      (let ((likep (lambda (arg) (equal (second arg) (second head)))))
+      (let ((likep (lambda (arg) (equalp (second arg) (second head)))))
 	(cons (list (reduce #'+ (mapcar #'car (remove-if-not likep terms)))
 		    (second head))
 	      (combine-like-terms (remove-if likep terms)))))
@@ -143,7 +125,7 @@
 		      (remove-if #'plus-p nonzero))))))
     ((list 0 _) 0)
     ((guard (list scalar 0) (numberp scalar)) 0)
-    ((guard (list scalar (list* '+ rest)) (numberp scalar))  ;distributivity
+    ((guard (list scalar (list* '+ rest)) (numberp scalar)) ;distributivity
      (cons '+ (mapcar (lambda (x) (list scalar (tidy x))) rest)))
     ((guard (list s1 (list s2 thing)) (and (numberp s1) (numberp s2)))
      (list (* s1 s2) (tidy thing)))
@@ -158,8 +140,80 @@
   (let ((tidied (tidy lst)))
     (if (equalp lst tidied) lst (mega-tidy tidied))))
 
+(defun flatten-tensors (expr)
+  (match expr
+    ((list* :tensor args)
+     (mapcan (lambda (x)
+	       (match x
+		 ((list* :tensor stuff) stuff)
+		 (_ (list x))))
+	     (cons :tensor (flatten-tensors args))))
+    ((list* op stuff) (cons op (mapcar #'flatten-tensors stuff)))
+    (_ expr)))
+
+(defun op-p (op) (or (member op '(+ -)) (numberp op)))
+
+;;; with fixed arity tensors
+(defun make-callable (fn-exp)
+  "Creates a function as defined by a symbolic linear combination of functions"
+  (match fn-exp
+    ((list :tensor f g)
+     (afn (x)
+       (let ((f (make-callable f))
+	     (g (make-callable g)))
+	 (match x
+	   (0 0)
+	   ((list :tensor y z) (make-tensor (funcall f y)
+					    (funcall g z)))
+
+	   ((guard (list* op expr) (op-p op))	;linearity
+	    (list op (mapcar #'self expr)))))))
+    ((list* 'comp fs) (reduce #'comp
+    			     (mapcar (lambda (f) (lambda (x) (call f x)))
+    				     fs)))
+    ((guard (list* op exp) (op-p op))
+     (lambda (arg)
+       (cons op (mapcar (lambda (f) (funcall (make-callable f) arg)) exp))))
+    (_ fn-exp)))
+
+;;; general arity tensors 
+;; (defun make-callable (fn-exp)
+;;   "Creates a function as defined by a symbolic linear combination of functions"
+;;   (match fn-exp
+;;     ((list* :tensor maps)
+;;      (afn (x)
+;;        (let ((maps (mapcar #'make-callable maps)))
+;; 	 (match x
+;; 	   (0 0)
+;; 	   ((list :tensor fns) (apply #'make-tensor
+;; 				      (lambda ())))
+
+;; 	   ((guard (list* op expr) (op-p op))	;linearity
+;; 	    (list op (mapcar #'self expr)))))))
+;;     ((list* 'comp fs) (reduce #'comp
+;;     			     (mapcar (lambda (f) (lambda (x) (call f x)))
+;;     				     fs)))
+;;     ((guard (list* op exp) (op-p op))
+;;      (lambda (arg)
+;;        (cons op (mapcar (lambda (f) (funcall (make-callable f) arg)) exp))))
+;;     (_ fn-exp)))
+
+(defun extend-morphism (fn)
+  "Extends a function on a basis to a morphism"
+  (afn (expr)
+   (match expr
+     (0 0)
+     ((guard (list* op rest) (op-p op)) (cons op (mapcar #'self rest)))
+     (_ (funcall fn expr)))))
+
 (defun call (fn-exp sexp)
   (mega-tidy (funcall (extend-morphism (make-callable fn-exp)) sexp)))
+
+(defmacro def-morphism (name (arg) &body body)
+  `(defun ,name (,arg)
+     (labels ((,name (,arg)
+		,@body))
+       (call #',name ,arg))))
 
 (defun small-phi (k simp)
   (let ((dim (dim simp)))
@@ -180,11 +234,6 @@
 			   (make-simplex (vector k))))
 	id-tensor-phi)))
 
-(defun sgn (num exp)
-  (if (evenp num) exp (list '-1 exp))
-  ;; exp
-  )
-
 (defparameter *cache* (make-hash-table :test 'equalp))
 
 (defun alexander-whitney (simp)
@@ -203,7 +252,7 @@
     (match (list ei dim)
       ((list 0 0) (make-tensor simp simp))
       ((list _ 0) 0)
-      ((list 0 _) (alexander-whitney simp))
+      ;; ((list 0 _) (alexander-whitney simp)) ;I'm doing this in xi-base-memo. Probably bad organization
       ((list _ _)
        (let ((left-recur (xi (1- ei) simp))
 	     (right-recur (xi ei (call #'boundary simp))))
@@ -216,19 +265,21 @@
     ((list :simplex _)
      (funcall fn expr))
     ((list* op rest)
-     (cons op (mapcar (partial #'on-simplices fn) rest)))))
+     (cons op (mapcar (partial #'on-simplices fn) rest)))
+    (_ expr)))
 
 (defun map-simplex (simp expr)
   (on-simplices 
    (lambda (reduced-simplex)
-     (make-simplex (map 'vector (lambda (x) (aref (verts simp) x))
-			(verts reduced-simplex))))
+     (aif (verts reduced-simplex)
+      (make-simplex (map 'vector (lambda (x) (aref (verts simp) x)) it))
+      0))
    expr))
 
 (defun xi-base-memo (ei simp)
-  (aif2 (gethash (list ei simp) *cache*) it
-	(setf (gethash (list ei simp) *cache*)
-	      (xi-base ei simp))))
+  (if (= ei 0) (alexander-whitney simp)  ;if it's alexander-whitney, no need to memoize
+      (sif2 (gethash (list ei simp) *cache*) sit
+	    (setf sit (mega-tidy (xi-base ei simp))))))
 
 ;;; this makes a huge difference in terms of performance
 (defun xi-base-uniformed (ei simp)
@@ -238,7 +289,7 @@
      (xi-base-memo ei simp))))
 
 (defun xi (ei exp)
-  (call (partial 'xi-base-uniformed ei) exp))
+  (call (partial #'xi-base-uniformed ei) exp))
 
 (defun verts-to-bitstring (verts)
   (iterate (for i in-vector verts) (sum (ash 1 (1- i)))))
@@ -252,4 +303,31 @@
 ;;; make coefficients work
 ;;; simplices as bitstrings? This will be necessary for represntation eventually
 ;;; perfect hash simplices -> bitstrings? 
-;;; increased efficiency -- calculate alexander-whitney, special case to it in xi
+;;; coassociativity works! 
+
+;;; coassociativity!
+;; (mega-tidy
+;; 	   (list '+ (flatten-tensors (call (make-tensor #'identity (partial #'xi 0)) (xi 0 (standard-simp 60))))
+;; 		 (list -1
+;; 		       (flatten-tensors (call (make-tensor (partial #'xi 0) #'identity) (xi 0 (standard-simp 60)))))))
+;;; => 0 
+
+(defun permute (perm seq)
+  (let ((perm (append perm (list (car perm)))))
+    (flet ((lookup (ind)
+	     (aif (second (member ind perm)) it ind)))
+      (iterate (for i from 1 to (length seq))
+	       (collect (nth (1- (lookup i)) seq))))))
+
+(defun permute-tensor (perm tens)
+  (cons :tensor (permute perm (cdr tens))))
+
+(defun blue123 (x)
+  (flatten-tensors
+   (call (make-tensor #'identity (partial #'xi 1))
+	 (xi 0 x))))
+
+(defun red213 (x)
+  (match (flatten-tensors
+	  (call (make-tensor (partial #'xi 1) #'identity) (xi 0 x)))
+    ((list :tensor a b c) (list :tensor b a c))))
