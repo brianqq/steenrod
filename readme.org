@@ -12,4 +12,17 @@ This program calculates the Steenrod higher diagonals of a linear combination of
    #+end_src
 ** permutation
    A permutation is denoted by a list matching the standard notation, i.e. (1 2 3) sends 1->2->3->1
-
+* Computing things
+** Steenrod diagonals
+  To calculate the n-th steenrod diagonal of expr, you use 
+  #+begin_src lisp
+'(xi n expr)
+  #+end_src
+** Permutations of tensors
+*** Collapsing tensors
+   Most of the code (at the moment) assumes that tensors are always arity 2. To take permutations of tensors, you have to first call flatten-tensor, which will walk the tree you input and reduce all nested tensors to one higher-arity tensor.
+*** Permuting tensors 
+    To invoke the permutation (p1 p2 ... p3) on all tensors in the expression expr, use
+    #+begin_src lisp
+'(permute-tensor '(p1 p2 ... p3) expr)
+    #+end_src
