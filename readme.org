@@ -1,0 +1,15 @@
+This program calculates the Steenrod higher diagonals of a linear combination of simplices. 
+* Representation
+** simplex
+   A simplex is represented as a list where the first element is :simplex and the second element is a vector of integers naming vertices, e.g.
+   #+begin_src lisp
+   '(:simplex #(0 1 2 3))
+   #+end_src
+** linear combination
+   A list starting with + indicates a sum, a list '(k vec) denotes scaling a vector by k
+   #+begin_src lisp
+   '(+ (2 x) (3 y))
+   #+end_src
+** permutation
+   A permutation is denoted by a list matching the standard notation, i.e. (1 2 3) sends 1->2->3->1
+
