@@ -1,5 +1,5 @@
 This program calculates the Steenrod higher diagonals of a linear combination of simplices. 
-* Representation
+* representation
 ** simplex
    A simplex is represented as a list where the first element is :simplex and the second element is a vector of integers naming vertices, e.g.
    #+begin_src lisp
@@ -12,16 +12,16 @@ This program calculates the Steenrod higher diagonals of a linear combination of
    #+end_src
 ** permutation
    A permutation is denoted by a list matching the standard notation, i.e. (1 2 3) sends 1->2->3->1
-* Computing things
-** Steenrod diagonals
+* computing things
+** steenrod diagonals
   To calculate the n-th steenrod diagonal of expr, you use 
   #+begin_src lisp
 (xi n expr)
   #+end_src
-** Permutations of tensors
-*** Collapsing tensors
+** permutations of tensors
+*** collapsing tensors
    Most of the code (at the moment) assumes that tensors are always arity 2. To take permutations of tensors, you have to first call flatten-tensor, which will walk the tree you input and reduce all nested tensors to one higher-arity tensor.
-*** Permuting tensors 
+*** permuting tensors 
     To invoke the permutation (p1 p2 ... p3) on all tensors in the expression expr, use
     #+begin_src lisp
 (permute-tensor '(p1 p2 ... p3) expr)
