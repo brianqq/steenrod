@@ -3,10 +3,10 @@
 (in-package #:steenrod)
 
 ;;; som utilities
-(defun partial (fn args)
+(defun partial (fn &rest args)
   "Partially applies fn to args. Returns the function (fn arg1 arg2 ... argn _____): x1...xk -> (fn arg1 ... argn x1 ... xk)."
   (lambda (&rest inner-args)
-    (apply fn args inner-args)))
+    (apply fn (append args inner-args))))
 
 (defun comp (&rest fns)
   (match fns
@@ -133,6 +133,17 @@
      (cons '+ (mapcar (lambda (summand) (make-tensor summand x)) sum )))
     ((list :tensor x (list* '+ sum))
      (cons '+ (mapcar (lambda (summand) (make-tensor x summand)) sum )))
+    ((or (list :delta _ 0 _) (list :delta _ _ 0)) 0)
+    ((list :delta n (list a x) y) (list a (list :delta n x y)))
+    ((list :delta n y (list a x)) (list a (list :delta n y x)))
+    ((list :delta n (list* '+ summands) y)
+     (cons '+ (mapcar (lambda (summand)
+			(list :delta n summand y))
+		      summands)))
+    ((list :delta n y (list* '+ summands))
+     (cons '+ (mapcar (lambda (summand)
+			(list :delta n y summand))
+		      summands)))
     ((list* car cdr) (if cdr (cons car (mapcar #'tidy cdr))))
     (_ expr)))
 
@@ -324,3 +335,40 @@
   (cons :tensor (permute perm (cdr tens))))
 
 
+;;; optrees
+;;;  1 2 3
+;;;  \/ /
+;;; 1 \/
+;;;  0 \
+;;; (:delta 0 (:delta 1 1 2) 3)
+
+(def-morphism derivative (tree)
+  (match tree
+    ((list :delta 0 x y) `(+ (:delta 0 ,(derivative x) ,y)
+			     (:delta 0 ,x ,(derivative y))))
+    ((list :delta n x y) `(+ (:delta ,(1- n) ,x ,y)
+			     (-1 (:delta ,(1- n) ,y ,x))
+			     (:delta ,n ,(derivative x) ,y)
+			     (:delta ,n ,y ,(derivative y))))
+    (_ 0)))
+
+(defun optree-leaves (tree)
+  (match tree
+    ((list* :delta _ args) (apply #'append (mapcar #'optree-leaves args)))
+    (_ (list tree))))
+
+(defun call-optree (tree simp)
+  (labels ((place (x y simp)
+	     (call (make-tensor (partial #'walk-optree x)
+				(partial #'walk-optree y))
+		   simp))
+	   (walk-optree (tree simp)
+	     (match tree
+	       ((list :delta n x y) (call (partial #'place x y) (xi n simp)))
+	       (_ simp))))
+   (call
+    (lambda (expr)
+      (cons :tensor
+	    (mapcar #'car (sort (mapcar #'cons (cdr expr) (optree-leaves tree))
+				#'< :key #'cdr))))
+    (flatten-tensors (walk-optree tree simp)))))
