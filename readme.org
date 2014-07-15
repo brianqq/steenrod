@@ -12,6 +12,15 @@ This program calculates the Steenrod higher diagonals of a linear combination of
    #+end_src
 ** permutation
    A permutation is denoted by a list matching the standard notation, i.e. (1 2 3) sends 1->2->3->1
+** Ring of scalars
+   The ring of scalars is currently Z/2Z by default. To change it, rebind the (dynamic) variable *base*, i.e.
+#+begin_src lisp
+(let ((*base* nil)) ;;; to use Z
+  (xi 1 (standard-simp 2)))
+(let ((*base 3))  ;;; to use Z/3Z
+  (xi 2 (standard-simp 3)))
+#+end_src
+   In Z/2Z, coefficients are removed after processing. 
 * computing things
 ** steenrod diagonals
   To calculate the n-th steenrod diagonal of expr, you use 
