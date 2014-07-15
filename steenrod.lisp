@@ -347,7 +347,7 @@
     ((list :delta 0 x y) `(+ (:delta 0 ,(derivative x) ,y)
 			     (:delta 0 ,x ,(derivative y))))
     ((list :delta n x y) `(+ (:delta ,(1- n) ,x ,y)
-			     (-1 (:delta ,(1- n) ,y ,x))
+			     (sgn n (:delta ,(1- n) ,y ,x))
 			     (:delta ,n ,(derivative x) ,y)
 			     (:delta ,n ,y ,(derivative y))))
     (_ 0)))

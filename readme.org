@@ -26,3 +26,26 @@ This program calculates the Steenrod higher diagonals of a linear combination of
     #+begin_src lisp
 (permute-tensor '(p1 p2 ... p3) expr)
     #+end_src
+* operad trees
+** representation
+   The operad tree 
+   #+begin_src text
+1 2 3
+\/ /
+1\/
+ 0\
+   #+end_src 
+   is represented by 
+   #+begin_src lisp
+'(:delta 0 (:delta 1 1 2) 3)
+   #+end_src
+** derivative
+   To take the derivative/boundary of an operad tree, call derivative
+   #+begin_src lisp
+(derivative '(:delta 0 (:delta 1 1 2) 3))
+   #+end_src
+** evaluate operad
+   To do this, call 
+   #+begin_src lisp
+(call-optree '(:delta 0 (:delta 0 2 1) 3) (standard-simp 3))
+   #+end_src
