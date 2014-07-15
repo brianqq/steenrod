@@ -2,7 +2,9 @@
   (:use #:cl #:optima #:iterate #:checkl))
 (in-package #:steenrod)
 
-;;; som utilities
+(declaim (optimize (debug 3)))
+
+;;; some utilities
 (defun partial (fn &rest args)
   "Partially applies fn to args. Returns the function (fn arg1 arg2 ... argn _____): x1...xk -> (fn arg1 ... argn x1 ... xk)."
   (lambda (&rest inner-args)
@@ -147,9 +149,29 @@
     ((list* car cdr) (if cdr (cons car (mapcar #'tidy cdr))))
     (_ expr)))
 
+(defun reduce-mod (base expr)
+  (match base
+    (nil expr)
+    (1 (error "base cannot be 1"))
+    (_ (match expr
+	 ((guard (list k vec) (numberp k)) (list (mod k base) (reduce-mod base vec)))
+	 ((list* '+ summands) (cons '+ (mapcar (partial #'reduce-mod base) summands)))
+	 (_ expr)))))
+
+(defparameter *base* 2)
+
+(defun remove-1 (lst)
+  (match lst
+    ((list 1 vec) vec)
+    ((list* '+ vecs) (cons '+ (mapcar #'remove-1 vecs)))
+    (_ lst)))
+
 (defun mega-tidy (lst)
-  (let ((tidied (tidy lst)))
-    (if (equalp lst tidied) lst (mega-tidy tidied))))
+  (let ((tidied (reduce-mod *base* (tidy lst))))
+    (if (equalp lst tidied)
+	(if (= *base* 2) (remove-1 lst)
+	    lst)
+	(mega-tidy tidied))))
 
 (defun flatten-tensors (expr)
   (match expr
@@ -342,15 +364,21 @@
 ;;;  0 \
 ;;; (:delta 0 (:delta 1 1 2) 3)
 
+(defun degree (tree)
+  (match tree
+    ((list :delta n x y) (+ n (degree x) (degree y)))
+    (_ 0)))
+
 (def-morphism derivative (tree)
   (match tree
     ((list :delta 0 x y) `(+ (:delta 0 ,(derivative x) ,y)
 			     (:delta 0 ,x ,(derivative y))))
     ((list :delta n x y) `(+ (:delta ,(1- n) ,x ,y)
-			     (sgn n (:delta ,(1- n) ,y ,x))
+			     ,(sgn n `(:delta ,(1- n) ,y ,x))
 			     (:delta ,n ,(derivative x) ,y)
 			     (:delta ,n ,y ,(derivative y))))
     (_ 0)))
+;;; this is not quite right 
 
 (defun optree-leaves (tree)
   (match tree
@@ -372,3 +400,26 @@
 	    (mapcar #'car (sort (mapcar #'cons (cdr expr) (optree-leaves tree))
 				#'< :key #'cdr))))
     (flatten-tensors (walk-optree tree simp)))))
+
+
+
+(defun red (x y z) `(:delta 0 (:delta 1 ,x ,y) ,z))
+(defun blue (x y z) `(:delta 0 ,x (:delta 1 ,y ,z)))
+(defun green (x y z) `(:delta 1 (:delta 0 ,x ,y) ,z))
+(defun yellow (x y z) `(:delta 1 ,x (:delta 0 ,y ,z)))
+
+(defun test-cycle (simp)
+  (mega-tidy
+   (list '+
+	 (call-optree (blue 1 2 3) simp)
+	 (call-optree (red 2 1 3) simp)
+	 (call-optree (green 1 3 2) simp))))
+
+;; (defun test-cycle (simp)
+;;   (mega-tidy
+;;    (list '+
+;; 	 (call-optree (blue 1 3 2) simp)
+;; 	 (call-optree (yellow 2 1 3) simp)
+;; 	 (call-optree (red 1 2 3) simp))))
+
+
