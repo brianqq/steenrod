@@ -203,7 +203,8 @@
   (afn (expr)
    (match expr
      (0 0)
-     ((guard (list* op rest) (op-p op)) (cons op (mapcar #'self rest)))
+     ((list* '+ rest) (cons '+ (mapcar #'self rest)))
+     ((guard (list n vec) (numberp n)) (list n (self vec)))
      (_ (funcall fn expr)))))
 
 (defun call (fn-exp sexp)
@@ -322,12 +323,4 @@
 (defun permute-tensor (perm tens)
   (cons :tensor (permute perm (cdr tens))))
 
-(defun blue123 (x)
-  (flatten-tensors
-   (call (make-tensor #'identity (partial #'xi 1))
-	 (xi 0 x))))
 
-(defun red213 (x)
-  (match (flatten-tensors
-	  (call (make-tensor (partial #'xi 1) #'identity) (xi 0 x)))
-    ((list :tensor a b c) (list :tensor b a c))))
