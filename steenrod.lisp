@@ -1,5 +1,5 @@
 (defpackage steenrod
-  (:use #:cl #:optima #:iterate #:checkl))
+  (:use #:cl #:optima #:iter ))
 (in-package #:steenrod)
 
 (declaim (optimize (debug 3)))
@@ -42,14 +42,14 @@
 (defun verts (simplex) (second simplex))
 (defun dim (simplex) (1- (length (verts simplex))))
 (defun standard-simp (dim)
-  (make-simplex (apply #'vector (iterate (for i from 0 to dim) (collect i)))))
+  (make-simplex (apply #'vector (iter (for i from 0 to dim) (collect i)))))
 
 (def-morphism boundary (simplex)
   "Computes the boundary of a simplex"
   (let ((verts (verts simplex)))
     (if (<= (length verts) 1) 0
-     (cons '+
-	   (iterate (for v in-vector verts)
+	(cons '+
+	      (iter (for v in-vector verts)
 		    (for sgn first 0 then (1+ sgn))
 		    (collect
 			(sgn sgn (make-simplex (remove v verts)))))))))
@@ -273,12 +273,12 @@
 (defun alexander-whitney (simp)
   (flet ((simpify (list) (make-simplex (apply #'vector list))))
     (cons '+
-     (iterate (for n from 0 to (dim simp))
-	      (collect
-		  (make-tensor
-		   (simpify (iterate (for i from 0 to n) (collect i)))
-		   (simpify (iterate (for i from n to (dim simp))
-				     (collect i)))))))))
+	  (iter (for n from 0 to (dim simp))
+		(collect
+		    (make-tensor
+		     (simpify (iter (for i from 0 to n) (collect i)))
+		     (simpify (iter (for i from n to (dim simp))
+				    (collect i)))))))))
 
 (defun xi-base (ei simp)
   (let* ((dim (dim simp))
@@ -326,7 +326,7 @@
   (call (partial #'xi-base-uniformed ei) exp))
 
 (defun verts-to-bitstring (verts)
-  (iterate (for i in-vector verts) (sum (ash 1 (1- i)))))
+  (iter (for i in-vector verts) (sum (ash 1 (1- i)))))
 
 ;;; to convert to a different base 
 ;; (let ((cl:*print-radix* t)
@@ -350,8 +350,8 @@
   (let ((perm (append perm (list (car perm)))))
     (flet ((lookup (ind)
 	     (aif (second (member ind perm)) it ind)))
-      (iterate (for i from 1 to (length seq))
-	       (collect (nth (1- (lookup i)) seq))))))
+      (iter (for i from 1 to (length seq))
+	    (collect (nth (1- (lookup i)) seq))))))
 
 (defun permute-tensor (perm tens)
   (cons :tensor (permute perm (cdr tens))))
@@ -399,9 +399,7 @@
       (cons :tensor
 	    (mapcar #'car (sort (mapcar #'cons (cdr expr) (optree-leaves tree))
 				#'< :key #'cdr))))
-    (flatten-tensors (walk-optree tree simp)))))
-
-
+    (flatten-tensors (call (partial #'walk-optree tree) simp)))))
 
 (defun red (x y z) `(:delta 0 (:delta 1 ,x ,y) ,z))
 (defun blue (x y z) `(:delta 0 ,x (:delta 1 ,y ,z)))
@@ -423,3 +421,43 @@
 ;; 	 (call-optree (red 1 2 3) simp))))
 
 
+;;; How to show steps? 
+
+;;; jacobi identity:
+;;; (1 + r + r^2) (1 tensor d) d ___ = 0
+;;; d = TDelta1 + Delta1
+(defun jacobi-test (simp)
+  (flet ((d (x) (list '+ (flip (xi 1 d)) (xi 1 d))))))
+
+;;; step operad
+(defun split (n step)
+  (match n
+    (1 (list (list step)))
+    (_ (iter (for i from 0 below (length step))
+	     (appending (mapcar (partial #'cons (subseq step 0 (1+ i)))
+				(split (1- n) (subseq step i))))))))
+
+(defun tally (list)
+  (let ((hash (make-hash-table)))
+    (dolist (x list)
+      (incf (gethash x hash 0)))
+    hash))
+
+;;; this works but i wish it were more abstract 
+(defun join-two-specific (join-op split0 split1)
+  (if (endp join-op) nil
+      (match (list join-op split0 split1)
+	((list (list* 0 join-cdr) (list* car0 cdr0) _)
+	 (append car0 (join-two-specific join-cdr cdr0 split1)))
+	((list (list* 1 join-cdr) _ (list* car1 cdr1))
+	 (append car1 (join-two-specific join-cdr split0 cdr1))))))
+
+(defun join-two (join-op step0 step1)
+  (let* ((step1 (mapcar (partial #'+ (length step0)) step1))
+	 (tallies (tally join-op)))
+    (cons '+
+	  (mapcan (lambda (x1)
+		    (mapcar (lambda (x0)
+			      (join-two-specific join-op x0 x1))
+			    (split (gethash 0 tallies) step0)))
+		  (split (gethash 1 tallies) step1)))))
