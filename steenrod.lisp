@@ -443,6 +443,16 @@
       (incf (gethash x hash 0)))
     hash))
 
+
+;;; http://stackoverflow.com/questions/3210177/in-common-lisp-how-to-define-a-generic-data-type-specifier-like-list-of-intege
+(defun elements-are-of-type (seq type)
+  (every (lambda (x) (typep x type)) seq))
+(deftype list-of (type)
+  (let ((predicate (gensym)))
+    (setf (symbol-function predicate)
+	  (lambda (seq) (elements-are-of-type seq type)))
+    `(and list (satisfies ,predicate))))
+
 ;;; this works but i wish it were more abstract 
 (defun join-two-specific (join-op split0 split1)
   (if (endp join-op) nil
@@ -461,3 +471,15 @@
 			      (join-two-specific join-op x0 x1))
 			    (split (gethash 0 tallies) step0)))
 		  (split (gethash 1 tallies) step1)))))
+;;; this assumes each input will start at zero, and hit
+;;; every level from 0 ... dim of the step-op
+
+(defun points (dim max)
+  (declare (type (integer 0) dim max))
+  (match (list dim max)
+    ((list 0 _) (list nil))
+    (_ (iter (for i from 0 to max)
+	     (appending (mapcar (partial #'cons i) (points (1- dim) i)))))))
+
+(defun step-act-specific (step act-spec)
+  ())
