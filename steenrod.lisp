@@ -443,7 +443,6 @@
       (incf (gethash x hash 0)))
     hash))
 
-
 ;;; http://stackoverflow.com/questions/3210177/in-common-lisp-how-to-define-a-generic-data-type-specifier-like-list-of-intege
 (defun elements-are-of-type (seq type)
   (every (lambda (x) (typep x type)) seq))
@@ -481,5 +480,14 @@
     (_ (iter (for i from 0 to max)
 	     (appending (mapcar (partial #'cons i) (points (1- dim) i)))))))
 
-(defun step-act-specific (step act-spec)
-  ())
+(defun step-act-specific (dim step act-spec)
+  "Performs an action indicated by step on a standard simplex of dimension dim by switching levels as dictated by act-spec. To compute the action of step, you must compute all necessary values of act-spec."
+  (let ((result (make-hash-table)))
+    (labels ((recur (i step act-spec)
+	       (cond ((> i dim) result)
+		     (t (push i (gethash (car step) result))
+			(if (and act-spec (= i (car act-spec)))
+			    (recur i (cdr step) (cdr act-spec))
+			    (recur (1+ i) step act-spec))))))
+      (recur 0 step act-spec))))
+;;; todo: make things 0 if you repeat a vertex.
