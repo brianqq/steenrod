@@ -34,6 +34,12 @@
 	   (if (or ,one ,two)
 	       ,true ,false)))))
 
+(defmacro aand (&rest args)
+  (cond ((null args) t)
+	((null (cdr args)) (car args))
+	(t `(aif ,(car args) (aand ,@(cdr args))))))
+
+
 (defun sgn (num exp)
   "Computes (-1)^num and uses it as the coefficient of exp."
   (if (evenp num) exp (list '-1 exp)))
@@ -426,8 +432,8 @@
 ;;; jacobi identity:
 ;;; (1 + r + r^2) (1 tensor d) d ___ = 0
 ;;; d = TDelta1 + Delta1
-(defun jacobi-test (simp)
-  (flet ((d (x) (list '+ (flip (xi 1 d)) (xi 1 d))))))
+;; (defun jacobi-test (simp)
+;;   (flet ((d (x) (list '+ (flip (xi 1 d)) (xi 1 d))))))
 
 ;;; step operad
 (defun split (n step)
@@ -444,13 +450,13 @@
     hash))
 
 ;;; http://stackoverflow.com/questions/3210177/in-common-lisp-how-to-define-a-generic-data-type-specifier-like-list-of-intege
-(defun elements-are-of-type (seq type)
-  (every (lambda (x) (typep x type)) seq))
-(deftype list-of (type)
-  (let ((predicate (gensym)))
-    (setf (symbol-function predicate)
-	  (lambda (seq) (elements-are-of-type seq type)))
-    `(and list (satisfies ,predicate))))
+;; (defun elements-are-of-type (seq type)
+;;   (every (lambda (x) (typep x type)) seq))
+;; (deftype list-of (type)
+;;   (let ((predicate (gensym)))
+;;     (setf (symbol-function predicate)
+;; 	  (lambda (seq) (elements-are-of-type seq type)))
+;;     `(and list (satisfies ,predicate))))
 
 ;;; this works but i wish it were more abstract 
 (defun join-two-specific (join-op split0 split1)
@@ -473,21 +479,30 @@
 ;;; this assumes each input will start at zero, and hit
 ;;; every level from 0 ... dim of the step-op
 
-(defun points (dim max)
-  (declare (type (integer 0) dim max))
-  (match (list dim max)
+(defun points (size max)
+  (declare (type (integer 0) size max))
+  (match (list size max)
     ((list 0 _) (list nil))
     (_ (iter (for i from 0 to max)
-	     (appending (mapcar (partial #'cons i) (points (1- dim) i)))))))
+	     (appending (mapcar (partial #'cons i) (points (1- size) i)))))))
+;;; this is a bad name
+;;; the variable names are bad too.
 
 (defun step-act-specific (dim step act-spec)
   "Performs an action indicated by step on a standard simplex of dimension dim by switching levels as dictated by act-spec. To compute the action of step, you must compute all necessary values of act-spec."
-  (let ((result (make-hash-table)))
+  (let ((result (make-array (1+ (reduce #'max step)) :initial-element nil)))
     (labels ((recur (i step act-spec)
 	       (cond ((> i dim) result)
-		     (t (push i (gethash (car step) result))
+		     ((aand (car (aref result (car step))) (= it i)) nil)
+		     (t (push i (aref result (car step)))
 			(if (and act-spec (= i (car act-spec)))
 			    (recur i (cdr step) (cdr act-spec))
 			    (recur (1+ i) step act-spec))))))
-      (recur 0 step act-spec))))
-;;; todo: make things 0 if you repeat a vertex.
+      (map 'vector #'reverse (recur 0 step act-spec)))))
+
+(defun step-act (dim step)
+  (cons '+
+   (remove-if (partial #'equalp #())
+	      (mapcar (comp (partial #'step-act-specific dim step) #'reverse)
+		      (points (1- (length step)) dim)))))
+;;; todo make output consistent with how i'm represeting everything
