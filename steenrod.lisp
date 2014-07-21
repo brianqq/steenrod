@@ -44,7 +44,7 @@
   "Computes (-1)^num and uses it as the coefficient of exp."
   (if (evenp num) exp (list '-1 exp)))
 
-(defun make-simplex (seq) (list :simplex seq))
+(defun make-simplex (seq) (list :simplex (coerce seq 'vector)))
 (defun verts (simplex) (second simplex))
 (defun dim (simplex) (1- (length (verts simplex))))
 (defun standard-simp (dim)
@@ -488,21 +488,49 @@
 ;;; this is a bad name
 ;;; the variable names are bad too.
 
+(defun make-step (list)
+  (declare (type list list))
+  (list :step list))
+
 (defun step-act-specific (dim step act-spec)
   "Performs an action indicated by step on a standard simplex of dimension dim by switching levels as dictated by act-spec. To compute the action of step, you must compute all necessary values of act-spec."
-  (let ((result (make-array (1+ (reduce #'max step)) :initial-element nil)))
+  (let* ((step (second step))
+	 (result (make-array (1+ (reduce #'max step)) :initial-element nil)))
     (labels ((recur (i step act-spec)
 	       (cond ((> i dim) result)
 		     ((aand (car (aref result (car step))) (= it i)) nil)
 		     (t (push i (aref result (car step)))
-			(if (and act-spec (= i (car act-spec)))
+			(if (aand act-spec (= i (car it)))
 			    (recur i (cdr step) (cdr act-spec))
 			    (recur (1+ i) step act-spec))))))
-      (map 'vector #'reverse (recur 0 step act-spec)))))
+      (map 'list #'reverse (recur 0 step act-spec)))))
+;;; there's an off by one error here, i.e. delta-1 [0 1] gives wrong thing
 
-(defun step-act (dim step)
-  (cons '+
-   (remove-if (partial #'equalp #())
-	      (mapcar (comp (partial #'step-act-specific dim step) #'reverse)
-		      (points (1- (length step)) dim)))))
-;;; todo make output consistent with how i'm represeting everything
+(defun step-act-dim (dim step-lin-comb)
+  (call
+   (lambda (step)
+     (cons '+
+	   (iter (for x in 
+		      (remove-if #'not
+				 (mapcar (comp (partial #'step-act-specific dim step) #'reverse)
+					 (points (length step) dim))))
+		 (collect (cons :tensor (mapcar #'make-simplex x))))))
+   step-lin-comb))
+
+(defun step-act (step-lin-comb simp-lin-comb)
+  (call (lambda (simp)
+	  (map-simplex simp
+	   (step-act-dim (dim simp) step-lin-comb)))
+	simp-lin-comb))
+;;; this ought to take a (linear comb of) simplex as an arg
+
+(defun delta-i-step (n)
+  (declare (type (integer 0) n))
+  (make-step
+   (iter (for i from 0 to (1+ n))
+	 (collect (if (evenp i) 0 1)))))
+
+(defun delta-n (n simp-lin-comb)
+  (step-act (delta-i-step n) simp-lin-comb))
+;;; I need to write a way to convert optrees to steps
+
