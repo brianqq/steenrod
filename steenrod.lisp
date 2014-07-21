@@ -497,7 +497,7 @@
   (let* ((step (second step))
 	 (result (make-array (1+ (reduce #'max step)) :initial-element nil)))
     (labels ((recur (i step act-spec)
-	       (cond ((> i dim) result)
+	       (cond ((or (endp step) (> i dim)) result)
 		     ((aand (car (aref result (car step))) (= it i)) nil)
 		     (t (push i (aref result (car step)))
 			(if (aand act-spec (= i (car it)))
@@ -513,7 +513,7 @@
 	   (iter (for x in 
 		      (remove-if #'not
 				 (mapcar (comp (partial #'step-act-specific dim step) #'reverse)
-					 (points (length step) dim))))
+					 (points (dim step) dim)))) ;polymorphic dim of steps? Already is!
 		 (collect (cons :tensor (mapcar #'make-simplex x))))))
    step-lin-comb))
 
@@ -528,9 +528,11 @@
   (declare (type (integer 0) n))
   (make-step
    (iter (for i from 0 to (1+ n))
-	 (collect (if (evenp i) 0 1)))))
+	 (collect (if (oddp i) 0 1)))))
+;;; double check even or odd
 
 (defun delta-n (n simp-lin-comb)
   (step-act (delta-i-step n) simp-lin-comb))
+;;; still some issues in dim 2 or higher.
 ;;; I need to write a way to convert optrees to steps
 
