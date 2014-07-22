@@ -259,53 +259,6 @@
 		,@body))
        (call #',name ,arg))))
 
-;;; I can get rid of starting from here
-(defun small-phi (k simp)
-  (let ((dim (dim simp)))
-    (if (= k (aref (verts simp) dim))		;is this check sufficient
-	0
-	(let* ((verts (verts simp))
-	      (face (make-simplex (concatenate 'vector verts (list k)))))
-	  (sgn (1+ dim) face)))))
-
-(defun big-phi (k base)
-  (let* ((phi-k (partial #'call (partial #'small-phi k)))
-	 (id-tensor-phi (sgn (dim (left base))
-			     (call (make-tensor #'identity phi-k) base)))) ;whaaat
-    ;; justin smith did this though
-    (if (zerop (dim (right base)))
-	(list '+ id-tensor-phi
-	      (make-tensor (funcall phi-k (left base)) ;already uses call
-			   (make-simplex (vector k))))
-	id-tensor-phi)))
-
-(defparameter *cache* (make-hash-table :test 'equalp))
-
-(defun alexander-whitney (simp)
-  (flet ((simpify (list) (make-simplex (apply #'vector list))))
-    (cons '+
-	  (iter (for n from 0 to (dim simp))
-		(collect
-		    (make-tensor
-		     (simpify (iter (for i from 0 to n) (collect i)))
-		     (simpify (iter (for i from n to (dim simp))
-				    (collect i)))))))))
-
-(defun xi-base (ei simp)
-  (let* ((dim (dim simp))
-	 (phi-k (partial #'big-phi (aref (verts simp) (dim simp)))))
-    (match (list ei dim)
-      ((list 0 0) (make-tensor simp simp))
-      ((list _ 0) 0)
-      ;; ((list 0 _) (alexander-whitney simp)) ;I'm doing this in xi-base-memo. Probably bad organization
-      ((list _ _)
-       (let ((left-recur (xi (1- ei) simp))
-	     (right-recur (xi ei (call #'boundary simp))))
-	 (list '+
-	       (call phi-k (list '+ left-recur (sgn ei (flip left-recur)))) ;phi on outside
-	       (sgn ei (call phi-k right-recur))))))))  ;sgn dim? sgn ei? sgn k?
-;;; to here 
-
 (defun on-simplices (fn expr)
   (match expr
     ((list :simplex _)
@@ -322,36 +275,8 @@
       0))
    expr))
 
-;;; and here
-(defun xi-base-memo (ei simp)
-  (if (= ei 0) (alexander-whitney simp)  ;if it's alexander-whitney, no need to memoize
-      (sif2 (gethash (list ei simp) *cache*) sit
-	    (setf sit (mega-tidy (xi-base ei simp))))))
-
-;;; this makes a huge difference in terms of performance
-(defun xi-base-uniformed (ei simp)
-  (map-simplex
-   simp
-   (let ((simp (standard-simp (dim simp))))
-     (xi-base-memo ei simp))))
-
-(defun xi (ei exp)
-  (call (partial #'xi-base-uniformed ei) exp))
-;;; to here
-
 (defun verts-to-bitstring (verts)
   (iter (for i in-vector verts) (sum (ash 1 (1- i)))))
-
-;;; to convert to a different base 
-;; (let ((cl:*print-radix* t)
-;; 		(cl:*print-base* 16))
-;; 	    (pprint (on-simplices (comp #'verts-to-bitstring #'verts)
-;; 				  (xi 0 (standard-simp 30)))))
-;;; todo---
-;;; make coefficients work
-;;; simplices as bitstrings? This will be necessary for represntation eventually
-;;; perfect hash simplices -> bitstrings? 
-;;; coassociativity works! 
 
 ;;; coassociativity!
 ;; (mega-tidy
