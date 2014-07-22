@@ -50,7 +50,9 @@
 (defun standard-simp (dim)
   (make-simplex (apply #'vector (iter (for i from 0 to dim) (collect i)))))
 
-(def-morphism boundary (simplex)
+(defgeneric bdd-dispatch (tag complex))
+
+(defmethod bdd-dispatch ((tag (eql :simplex)) simplex)
   "Computes the boundary of a simplex"
   (let ((verts (verts simplex)))
     (if (<= (length verts) 1) 0
@@ -59,6 +61,9 @@
 		    (for sgn first 0 then (1+ sgn))
 		    (collect
 			(sgn sgn (make-simplex (remove v verts)))))))))
+
+(def-morphism boundary (simplex)
+  (bdd-dispatch (car simplex) simplex))
 ;;; boundary relies on stuff defined much later
 
 ;; (defun make-tensor (arg1 arg2)
@@ -75,7 +80,7 @@
 		(destructuring-bind (_ vec) x
 		  (declare (ignorable _))
 		  (eql vec 0)))
-	   args)
+	      args)
 	0 (list (reduce #'* (mapcar #'car args))
 		(cons :tensor (mapcar #'second args))))))
 
@@ -175,8 +180,7 @@
 (defun mega-tidy (lst)
   (let ((tidied (reduce-mod *base* (tidy lst))))
     (if (equalp lst tidied)
-	(if (= *base* 2) (remove-1 lst)
-	    lst)
+	(if (= *base* 2) (remove-1 lst) lst)
 	(mega-tidy tidied))))
 
 (defun flatten-tensors (expr)
@@ -208,7 +212,7 @@
 	   ((guard (list* op expr) (op-p op))	;linearity
 	    (list op (mapcar #'self expr)))))))
     ((list* 'comp fs) (reduce #'comp
-    			     (mapcar (lambda (f) (lambda (x) (call f x)))
+    			     (mapcar (lambda (f) (partial #'call f))  ;this makes a weird mutual recursion
     				     fs)))
     ((guard (list* op exp) (op-p op))
      (lambda (arg)
@@ -255,6 +259,7 @@
 		,@body))
        (call #',name ,arg))))
 
+;;; I can get rid of starting from here
 (defun small-phi (k simp)
   (let ((dim (dim simp)))
     (if (= k (aref (verts simp) dim))		;is this check sufficient
@@ -299,6 +304,7 @@
 	 (list '+
 	       (call phi-k (list '+ left-recur (sgn ei (flip left-recur)))) ;phi on outside
 	       (sgn ei (call phi-k right-recur))))))))  ;sgn dim? sgn ei? sgn k?
+;;; to here 
 
 (defun on-simplices (fn expr)
   (match expr
@@ -316,6 +322,7 @@
       0))
    expr))
 
+;;; and here
 (defun xi-base-memo (ei simp)
   (if (= ei 0) (alexander-whitney simp)  ;if it's alexander-whitney, no need to memoize
       (sif2 (gethash (list ei simp) *cache*) sit
@@ -330,6 +337,7 @@
 
 (defun xi (ei exp)
   (call (partial #'xi-base-uniformed ei) exp))
+;;; to here
 
 (defun verts-to-bitstring (verts)
   (iter (for i in-vector verts) (sum (ash 1 (1- i)))))
@@ -388,7 +396,7 @@
 
 (defun optree-leaves (tree)
   (match tree
-    ((list* :delta _ args) (apply #'append (mapcar #'optree-leaves args)))
+    ((list* :delta _ args) (reduce #'append (mapcar #'optree-leaves args)))
     (_ (list tree))))
 
 (defun call-optree (tree simp)
@@ -504,7 +512,8 @@
 			    (recur i (cdr step) (cdr act-spec))
 			    (recur (1+ i) step act-spec))))))
       (map 'list #'reverse (recur 0 step act-spec)))))
-;;; there's an off by one error here, i.e. delta-1 [0 1] gives wrong thing
+;;; this works by taking a step & an act-spec that tells you when to step to the next level 
+;;; and recursively walking through
 
 (defun step-act-dim (dim step-lin-comb)
   (call
@@ -524,15 +533,15 @@
 	simp-lin-comb))
 ;;; this ought to take a (linear comb of) simplex as an arg
 
-(defun delta-i-step (n)
+(defun delta-n-step (n)
   (declare (type (integer 0) n))
   (make-step
-   (iter (for i from 0 to (1+ n))
+   (iter (for i from (1+ n) downto  0)
 	 (collect (if (oddp i) 0 1)))))
 ;;; double check even or odd
 
 (defun delta-n (n simp-lin-comb)
-  (step-act (delta-i-step n) simp-lin-comb))
+  (step-act (delta-n-step n) simp-lin-comb))
 ;;; still some issues in dim 2 or higher.
 ;;; I need to write a way to convert optrees to steps
 
