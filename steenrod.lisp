@@ -128,6 +128,8 @@
 
 (defun tidy (expr)
   (match expr
+    ((list :keep n) (list :keep n))
+    ((list :step n) (list :step n))
     ((list '+) 0)
     ((list '+ x) x)
     ((list* '+ rest)
@@ -146,9 +148,9 @@
      (cons '+ (mapcar (lambda (summand) (make-tensor summand x)) sum )))
     ((list :tensor x (list* '+ sum))
      (cons '+ (mapcar (lambda (summand) (make-tensor x summand)) sum )))
-    ((or (list :delta _ 0 _) (list :delta _ _ 0)) 0)
-    ((list :delta n (list a x) y) (list a (list :delta n x y)))
-    ((list :delta n y (list a x)) (list a (list :delta n y x)))
+    ((or (list :delta _ 0 _) (list :delta _ _ 0)) 0) ; oy
+    ((guard (list :delta n (list a x) y) (numberp n)) (list a (list :delta n x y)))
+    ((guard (list :delta n y (list a x)) (numberp n)) (list a (list :delta n y x)))
     ((list :delta n (list* '+ summands) y)
      (cons '+ (mapcar (lambda (summand)
 			(list :delta n summand y))
@@ -255,8 +257,7 @@
 
 (defmacro def-morphism (name (arg) &body body)
   `(defun ,name (,arg)
-     (labels ((,name (,arg)
-		,@body))
+     (labels ((,name (,arg) ,@body))
        (call #',name ,arg))))
 
 (defun on-simplices (fn expr)
@@ -271,7 +272,7 @@
   (on-simplices 
    (lambda (reduced-simplex)
      (aif (verts reduced-simplex)
-      (make-simplex (map 'vector (lambda (x) (aref (verts simp) x)) it))
+      (make-simplex (map 'vector (partial #'aref (verts simp)) it))
       0))
    expr))
 
@@ -295,78 +296,6 @@
 (defun permute-tensor (perm tens)
   (cons :tensor (permute perm (cdr tens))))
 
-
-;;; optrees
-;;;  1 2 3
-;;;  \/ /
-;;; 1 \/
-;;;  0 \
-;;; (:delta 0 (:delta 1 1 2) 3)
-
-(defun degree (tree)
-  (match tree
-    ((list :delta n x y) (+ n (degree x) (degree y)))
-    (_ 0)))
-
-(def-morphism derivative (tree)
-  (match tree
-    ((list :delta 0 x y) `(+ (:delta 0 ,(derivative x) ,y)
-			     (:delta 0 ,x ,(derivative y))))
-    ((list :delta n x y) `(+ (:delta ,(1- n) ,x ,y)
-			     ,(sgn n `(:delta ,(1- n) ,y ,x))
-			     (:delta ,n ,(derivative x) ,y)
-			     (:delta ,n ,y ,(derivative y))))
-    (_ 0)))
-;;; this is not quite right 
-
-(defun optree-leaves (tree)
-  (match tree
-    ((list* :delta _ args) (reduce #'append (mapcar #'optree-leaves args)))
-    (_ (list tree))))
-
-(defun call-optree (tree simp)
-  (labels ((place (x y simp)
-	     (call (make-tensor (partial #'walk-optree x)
-				(partial #'walk-optree y))
-		   simp))
-	   (walk-optree (tree simp)
-	     (match tree
-	       ((list :delta n x y) (call (partial #'place x y) (xi n simp)))
-	       (_ simp))))
-   (call
-    (lambda (expr)
-      (cons :tensor
-	    (mapcar #'car (sort (mapcar #'cons (cdr expr) (optree-leaves tree))
-				#'< :key #'cdr))))
-    (flatten-tensors (call (partial #'walk-optree tree) simp)))))
-
-(defun red (x y z) `(:delta 0 (:delta 1 ,x ,y) ,z))
-(defun blue (x y z) `(:delta 0 ,x (:delta 1 ,y ,z)))
-(defun green (x y z) `(:delta 1 (:delta 0 ,x ,y) ,z))
-(defun yellow (x y z) `(:delta 1 ,x (:delta 0 ,y ,z)))
-
-(defun test-cycle (simp)
-  (mega-tidy
-   (list '+
-	 (call-optree (blue 1 2 3) simp)
-	 (call-optree (red 2 1 3) simp)
-	 (call-optree (green 1 3 2) simp))))
-
-;; (defun test-cycle (simp)
-;;   (mega-tidy
-;;    (list '+
-;; 	 (call-optree (blue 1 3 2) simp)
-;; 	 (call-optree (yellow 2 1 3) simp)
-;; 	 (call-optree (red 1 2 3) simp))))
-
-
-;;; How to show steps? 
-
-;;; jacobi identity:
-;;; (1 + r + r^2) (1 tensor d) d ___ = 0
-;;; d = TDelta1 + Delta1
-;; (defun jacobi-test (simp)
-;;   (flet ((d (x) (list '+ (flip (xi 1 d)) (xi 1 d))))))
 
 ;;; step operad
 (defun split (n step)
@@ -400,15 +329,21 @@
 	((list (list* 1 join-cdr) _ (list* car1 cdr1))
 	 (append car1 (join-two-specific join-cdr split0 cdr1))))))
 
-(defun join-two (join-op step0 step1)
-  (let* ((step1 (mapcar (partial #'+ (length step0)) step1))
+(defun join-two-no-shift (join-op step0 step1)
+  (let* ((join-op (second join-op))
+	 (step0 (second step0))
+	 (step1 (second step1))
 	 (tallies (tally join-op)))
     (cons '+
 	  (mapcan (lambda (x1)
 		    (mapcar (lambda (x0)
-			      (join-two-specific join-op x0 x1))
+			      (list :step (join-two-specific join-op x0 x1)))
 			    (split (gethash 0 tallies) step0)))
 		  (split (gethash 1 tallies) step1)))))
+
+(defun join-two (join-op step0 step1)
+  (join-two-no-shift join-op step0 (list :step (mapcar (partial #'+ (length (second step0))) (second step1)))))
+
 ;;; this assumes each input will start at zero, and hit
 ;;; every level from 0 ... dim of the step-op
 
@@ -469,4 +404,80 @@
   (step-act (delta-n-step n) simp-lin-comb))
 ;;; still some issues in dim 2 or higher.
 ;;; I need to write a way to convert optrees to steps
+
+;;; optrees
+;;;  1 2 3
+;;;  \/ /
+;;; 1 \/
+;;;  0 \
+;;; (:delta 0 (:delta 1 1 2) 3)
+
+(defun degree (tree)
+  (match tree
+    ((list :delta n x y) (+ n (degree x) (degree y)))
+    (_ 0)))
+
+(defmethod bdd-dispatch ((tag (eql :delta)) tree)
+  (labels ((derivative (tree)
+	     (match tree
+	       ((list :delta 0 x y) `(+ (:delta 0 ,(call #'derivative x) ,y)
+					(:delta 0 ,x ,(call #'derivative y))))
+	       ((list :delta n x y) `(+ (:delta ,(1- n) ,x ,y)
+					,(sgn n `(:delta ,(1- n) ,y ,x))
+					(:delta ,n ,(call #'derivative x) ,y)
+					(:delta ,n ,y ,(call #'derivative y))))
+	       (_ 0))))
+    (derivative tree)))
+;;; this is not quite right 
+
+(defun optree-leaves (tree)
+  (match tree
+    ((list* :delta _ args) (reduce #'append (mapcar #'optree-leaves args)))
+    (_ (list tree))))
+
+(defun call-optree (tree simp)
+  (labels ((place (x y simp)
+	     (call (make-tensor (partial #'walk-optree x)
+				(partial #'walk-optree y))
+		   simp))
+	   (walk-optree (tree simp)
+	     (match tree
+	       ((list :delta n x y) (call (partial #'place x y) (delta-n n simp)))
+	       (_ simp))))
+   (call
+    (lambda (expr)
+      (cons :tensor
+	    (mapcar #'car (sort (mapcar #'cons (cdr expr) (optree-leaves tree))
+				#'< :key #'cdr))))
+    (flatten-tensors (call (partial #'walk-optree tree) simp)))))
+;;; todo: compile these guys into steps instead
+
+(defun tag-keep (tree)
+  (match tree
+    ((cons :delta stuff) (cons :delta (mapcar #'tag-keep stuff)))
+    (n (list :keep n))))
+
+(defun compile-optree (tree)
+  (labels ((recur (tree)
+	     (match tree
+	       ((list :keep n) (list :step (list n)))
+	       ((list :delta (list :keep n) (list :step x) (list :step y))
+		(join-two-no-shift (delta-n-step n) (list :step x) (list :step y)))
+	       ((list :delta (list :keep n) x y)
+		(call #'recur (mega-tidy (list :delta (list :keep n) (recur x) (recur y)))))
+	       (_ (error "arg")))))
+    (recur (tag-keep tree))))
+
+(defmethod bdd-dispatch ((tag (eql :step)) step)
+  (labels ((deriv (lst)
+	       (let* ((arr (coerce lst 'vector))
+		      (inds (iter (for i from 0 below (length arr))
+				  (if (or (zerop i) (= (1- (length arr)) i) (/= (aref arr (1- i))
+										(aref arr (1+ i))))
+				      (collect i)))))
+		 (cons '+ (iter (for i in inds)
+				(collect (cons :step
+					       (iter (for j from 0 below (length arr))
+						     (if (/= i j) (collect (aref arr j)))))))))))
+    (deriv (second step))))
 
