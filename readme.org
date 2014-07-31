@@ -19,7 +19,7 @@ This program calculates the Steenrod higher diagonals of a linear combination of
   #+begin_src lisp
 (standard-simp n)
   #+end_src
-  creates the standard `n'-simplex
+  creates the standard $n$-simplex
 * linear combinations
   A linear combination is represented by a list with + as the first element
   For example, 0|01 + 01|1, is represented as 
