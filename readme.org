@@ -1,60 +1,52 @@
 This program calculates the Steenrod higher diagonals of a linear combination of simplices. 
-* representation
-** simplex
-   A simplex is represented as a list where the first element is :simplex and the second element is a vector of integers naming vertices, e.g.
-   #+begin_src lisp
-   '(:simplex #(0 1 2 3))
-   #+end_src
-** linear combination
-   A list starting with + indicates a sum, a list '(k vec) denotes scaling a vector by k
-   #+begin_src lisp
-   '(+ (2 x) (3 y))
-   #+end_src
-** permutation
-   A permutation is denoted by a list matching the standard notation, i.e. (1 2 3) sends 1->2->3->1
-** Ring of scalars
-   The ring of scalars is currently Z/2Z by default. To change it, rebind the (dynamic) variable *base*, i.e.
-#+begin_src lisp
-(let ((*base* nil)) ;;; to use Z
-  (xi 1 (standard-simp 2)))
-(let ((*base 3))  ;;; to use Z/3Z
-  (xi 2 (standard-simp 3)))
-#+end_src
-   In Z/2Z, coefficients are removed after processing. 
-* computing things
-** steenrod diagonals
-  To calculate the n-th steenrod diagonal of expr, you use 
+* simplices 
+  A simplex is represented as 
   #+begin_src lisp
-(xi n expr)
+'(:simplex #(0 1 2 3))
   #+end_src
-** permutations of tensors
-*** collapsing tensors
-   Most of the code (at the moment) assumes that tensors are always arity 2. To take permutations of tensors, you have to first call flatten-tensor, which will walk the tree you input and reduce all nested tensors to one higher-arity tensor.
-*** permuting tensors 
-    To invoke the permutation (p1 p2 ... p3) on all tensors in the expression expr, use
-    #+begin_src lisp
-(permute-tensor '(p1 p2 ... p3) expr)
-    #+end_src
-* operad trees
-** representation
-   The operad tree 
-   #+begin_src text
-1  2 3
- \/ /
- 1\/
-  0
-   #+end_src 
-   is represented by 
-   #+begin_src lisp
-'(:delta 0 (:delta 1 1 2) 3)
-   #+end_src
-** derivative
-   To take the derivative/boundary of an operad tree, call derivative
-   #+begin_src lisp
-(derivative '(:delta 0 (:delta 1 1 2) 3))
-   #+end_src
-** evaluate operad
-   To do this, call 
-   #+begin_src lisp
-(call-optree '(:delta 0 (:delta 0 2 1) 3) (standard-simp 3))
-   #+end_src
+  Which is a list containing two elements: the tag `:simplex' and a vector. 
+  
+  This can also be written as 
+  #+begin_src lisp
+(list :simplex #(0 1 2 3))
+  #+end_src
+  or 
+  #+begin_src lisp
+(list :simplex (vertex 0 1 2 3))
+  #+end_src
+** standard simplices
+  The function 
+  #+begin_src lisp
+(standard-simp n)
+  #+end_src
+  creates the standard `n'-simplex
+* linear combinations
+  A linear combination is represented by a list with + as the first element
+  For example, 0|01 + 01|1, is represented as 
+  #+begin_src lisp
+'(+ (:tensor (:simp #(0)) (:simp #(0 1)))
+    (:tensor (:simp #(0 1) (:simp #(1)))))
+  #+end_src
+** algebraic simplification
+  The function mega-tidy simplifies an algebraic expression until it is in simplest form.   
+  #+begin_src lisp
+(mega-tidy
+ '(+ (:tensor (:simp #(0)) (:simp #(0 1)))
+     (:tensor (:simp #(0 1) (:simp #(1))))
+     (:tensor (:simp #(0)) (:simp #(0 1)))))
+  #+end_src
+  outputs 
+  #+begin_src lisp
+(:TENSOR (:SIMP #(0 1) (:SIMP #(1))))
+  #+end_src
+* step operations
+  Step operations are stored as a list of two elements, the first is the :step tag, the second is a vector. 
+  The vector indicates the height of each horizontal step.
+  #+begin_src verbose
+_   _
+ |_|
+  #+end_src
+  is
+  #+begin_src lisp
+'(:step #(0 1 0))
+  #+end_src
