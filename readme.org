@@ -28,7 +28,7 @@ This program calculates the Steenrod higher diagonals of a linear combination of
     (:tensor (:simplex #(0 1) (:simplex #(1)))))
   #+end_src
 ** algebraic simplification
-  The function mega-tidy simplifies an algebraic expression until it is in simplest form.   
+  The function =mega-tidy= simplifies an algebraic expression until it is in simplest form.   
   #+begin_src lisp
 (mega-tidy
  '(+ (:tensor (:simplex #(0)) (:simplex #(0 1)))
