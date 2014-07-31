@@ -12,7 +12,7 @@ This program calculates the Steenrod higher diagonals of a linear combination of
   #+end_src
   or 
   #+begin_src lisp
-(list :simplex (vertex 0 1 2 3))
+(list :simplex (vector 0 1 2 3))
   #+end_src
 ** standard simplices
   The function 
