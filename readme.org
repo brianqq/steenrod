@@ -24,20 +24,20 @@ This program calculates the Steenrod higher diagonals of a linear combination of
   A linear combination is represented by a list with + as the first element
   For example, 0|01 + 01|1, is represented as 
   #+begin_src lisp
-'(+ (:tensor (:simp #(0)) (:simp #(0 1)))
-    (:tensor (:simp #(0 1) (:simp #(1)))))
+'(+ (:tensor (:simplex #(0)) (:simplex #(0 1)))
+    (:tensor (:simplex #(0 1) (:simplex #(1)))))
   #+end_src
 ** algebraic simplification
   The function mega-tidy simplifies an algebraic expression until it is in simplest form.   
   #+begin_src lisp
 (mega-tidy
- '(+ (:tensor (:simp #(0)) (:simp #(0 1)))
-     (:tensor (:simp #(0 1) (:simp #(1))))
-     (:tensor (:simp #(0)) (:simp #(0 1)))))
+ '(+ (:tensor (:simplex #(0)) (:simplex #(0 1)))
+     (:tensor (:simplex #(0 1) (:simplex #(1))))
+     (:tensor (:simplex #(0)) (:simplex #(0 1)))))
   #+end_src
   outputs 
   #+begin_src lisp
-(:TENSOR (:SIMP #(0 1) (:SIMP #(1))))
+(:TENSOR (:SIMPLEX #(0 1) (:SIMPLEX #(1))))
   #+end_src
 * step operations
   Step operations are stored as a list of two elements, the first is the :step tag, the second is a vector. 
