@@ -43,8 +43,8 @@ This program calculates the Steenrod higher diagonals of a linear combination of
   Step operations are stored as a list of two elements, the first is the :step tag, the second is a vector. 
   The vector indicates the height of each horizontal step.
   #+begin_src verbose
-0: _   _
-1:  |_|
+0: -   -
+1:   - 
   #+end_src
   is
   #+begin_src lisp
