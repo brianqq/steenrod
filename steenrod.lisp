@@ -260,6 +260,7 @@
      (labels ((,name (,arg) ,@body))
        (call #',name ,arg))))
 
+
 (defun on-simplices (fn expr)
   (match expr
     ((list :simplex _)
