@@ -4,7 +4,7 @@ This program calculates the Steenrod higher diagonals of a linear combination of
   #+begin_src lisp
 '(:simplex #(0 1 2 3))
   #+end_src
-  Which is a list containing two elements: the tag `:simplex' and a vector. 
+  Which is a list containing two elements: the tag :simplex and a vector. 
   
   This can also be written as 
   #+begin_src lisp
@@ -19,7 +19,7 @@ This program calculates the Steenrod higher diagonals of a linear combination of
   #+begin_src lisp
 (standard-simp n)
   #+end_src
-  creates the standard $n$-simplex
+  creates the standard n-simplex
 * linear combinations
   A linear combination is represented by a list with + as the first element
   For example, 0|01 + 01|1, is represented as 
