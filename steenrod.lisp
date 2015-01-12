@@ -39,7 +39,6 @@
 	((null (cdr args)) (car args))
 	(t `(aif ,(car args) (aand ,@(cdr args))))))
 
-
 (defun sgn (num exp)
   "Computes (-1)^num and uses it as the coefficient of exp."
   (if (evenp num) exp (list '-1 exp)))
@@ -61,6 +60,11 @@
 		    (for sgn first 0 then (1+ sgn))
 		    (collect
 			(sgn sgn (make-simplex (remove v verts)))))))))
+
+(defmacro def-morphism (name (arg) &body body)
+  `(defun ,name (,arg)
+     (labels ((,name (,arg) ,@body))
+       (call #',name ,arg))))
 
 (def-morphism boundary (simplex)
   (bdd-dispatch (car simplex) simplex))
@@ -144,10 +148,11 @@
      (cons '+ (mapcar (lambda (x) (list scalar (tidy x))) rest)))
     ((guard (list s1 (list s2 thing)) (and (numberp s1) (numberp s2)))
      (list (* s1 s2) (tidy thing)))
-    ((list :tensor (list* '+ sum) x)
+    ((list :tensor (list* '+ sum) x)  	;only arity 2 tensor
      (cons '+ (mapcar (lambda (summand) (make-tensor summand x)) sum )))
     ((list :tensor x (list* '+ sum))
      (cons '+ (mapcar (lambda (summand) (make-tensor x summand)) sum )))
+    ((guard (list* :tensor args) (some (partial #'eql 0) args)) 0)
     ((or (list :delta _ 0 _) (list :delta _ _ 0)) 0) ; oy
     ((guard (list :delta n (list a x) y) (numberp n)) (list a (list :delta n x y)))
     ((guard (list :delta n y (list a x)) (numberp n)) (list a (list :delta n y x)))
@@ -165,7 +170,7 @@
 (defun reduce-mod (base expr)
   (match base
     (nil expr)
-    (1 (error "base cannot be 1"))
+    ((or 1 0) (error "base cannot be 1"))
     (_ (match expr
 	 ((guard (list k vec) (numberp k)) (list (mod k base) (reduce-mod base vec)))
 	 ((list* '+ summands) (cons '+ (mapcar (partial #'reduce-mod base) summands)))
@@ -182,7 +187,7 @@
 (defun mega-tidy (lst)
   (let ((tidied (reduce-mod *base* (tidy lst))))
     (if (equalp lst tidied)
-	(if (= *base* 2) (remove-1 lst) lst)
+	(if (eql *base* 2) (remove-1 lst) lst)
 	(mega-tidy tidied))))
 
 (defun flatten-tensors (expr)
@@ -255,12 +260,6 @@
 (defun call (fn-exp sexp)
   (mega-tidy (funcall (extend-morphism (make-callable fn-exp)) sexp)))
 
-(defmacro def-morphism (name (arg) &body body)
-  `(defun ,name (,arg)
-     (labels ((,name (,arg) ,@body))
-       (call #',name ,arg))))
-
-
 (defun on-simplices (fn expr)
   (match expr
     ((list :simplex _)
@@ -287,24 +286,30 @@
 ;; 		       (flatten-tensors (call (make-tensor (partial #'xi 0) #'identity) (xi 0 (standard-simp 60)))))))
 ;;; => 0 
 
+;; (defun permute (perm seq)
+;;   (let ((perm (append perm (list (car perm)))))
+;;     (flet ((lookup (ind)
+;; 	     (aif (second (member ind perm)) it ind)))
+;;       (iter (for i from 1 to (length seq))
+;; 	    (collect (nth (1- (lookup i)) seq))))))
+
 (defun permute (perm seq)
   (let ((perm (append perm (list (car perm)))))
     (flet ((lookup (ind)
 	     (aif (second (member ind perm)) it ind)))
-      (iter (for i from 1 to (length seq))
-	    (collect (nth (1- (lookup i)) seq))))))
+      (iter (for i from 0 to (1- (length seq)))
+	    (collect (nth (lookup i) seq))))))
 
-(defun permute-tensor (perm tens)
-  (cons :tensor (permute perm (cdr tens))))
-
+;; (defun permute-tensor (perm tens)
+;;   (cons :tensor (permute perm (cdr tens))))
 
 ;;; step operad
-(defun split (n step)
-  (match n
-    (1 (list (list step)))
-    (_ (iter (for i from 0 below (length step))
-	     (appending (mapcar (partial #'cons (subseq step 0 (1+ i)))
-				(split (1- n) (subseq step i))))))))
+(defun split (n polar-step)
+  (if (<= n 1)
+    (list (list polar-step))
+    (iter (for i from 0 below (length polar-step))
+	  (appending (mapcar (partial #'cons (subseq polar-step 0 (1+ i)))
+			     (split (1- n) (subseq polar-step i)))))))
 
 (defun tally (list)
   (let ((hash (make-hash-table)))
@@ -312,38 +317,52 @@
       (incf (gethash x hash 0)))
     hash))
 
-;;; http://stackoverflow.com/questions/3210177/in-common-lisp-how-to-define-a-generic-data-type-specifier-like-list-of-intege
-;; (defun elements-are-of-type (seq type)
-;;   (every (lambda (x) (typep x type)) seq))
-;; (deftype list-of (type)
-;;   (let ((predicate (gensym)))
-;;     (setf (symbol-function predicate)
-;; 	  (lambda (seq) (elements-are-of-type seq type)))
-;;     `(and list (satisfies ,predicate))))
+(defun polarize (step)
+  (iter (for x in (second step))
+	(for polarity first 1 then (- polarity))
+	(collect (list x polarity))))
+
+(defun depolarize (polar-step)
+  (let* ((naked-step (mapcar #'car polar-step))
+	 (poles (mapcar #'second polar-step))
+	 (sgn (iter (for (x y) on poles)
+		    (counting (and y (= x y))))))
+    (sgn sgn
+	 (list :step naked-step))))
+
+(defun prod-pole (bigpole pole-step)
+  (iter (for (step pol) in pole-step)
+	(collect (list step (* pol bigpole)))))
 
 ;;; this works but i wish it were more abstract 
 (defun join-two-specific (join-op split0 split1)
   (if (endp join-op) nil
       (match (list join-op split0 split1)
-	((list (list* 0 join-cdr) (list* car0 cdr0) _)
-	 (append car0 (join-two-specific join-cdr cdr0 split1)))
-	((list (list* 1 join-cdr) _ (list* car1 cdr1))
-	 (append car1 (join-two-specific join-cdr split0 cdr1))))))
+	((list (list* (list 0 pol) join-cdr) (list* car0 cdr0) _)
+	 (append (prod-pole pol car0) 
+		 (join-two-specific join-cdr cdr0 split1)))
+	((list (list* (list 1 pol) join-cdr) _ (list* car1 cdr1))
+	 (append (prod-pole pol car1) 
+		 (join-two-specific join-cdr split0 cdr1))))))
 
 (defun join-two-no-shift (join-op step0 step1)
-  (let* ((join-op (second join-op))
-	 (step0 (second step0))
-	 (step1 (second step1))
-	 (tallies (tally join-op)))
+  (let* ((pol-op (polarize join-op))
+	 (step0 (polarize step0))
+	 (step1 (polarize step1))
+	 (tallies (tally (second join-op))))
     (cons '+
 	  (mapcan (lambda (x1)
 		    (mapcar (lambda (x0)
-			      (list :step (join-two-specific join-op x0 x1)))
+			      (depolarize (join-two-specific pol-op x0 x1)))
 			    (split (gethash 0 tallies) step0)))
 		  (split (gethash 1 tallies) step1)))))
 
 (defun join-two (join-op step0 step1)
-  (join-two-no-shift join-op step0 (list :step (mapcar (partial #'+ (length (second step0))) (second step1)))))
+  (let ((shift (1+ (iter (for x in (second step0))
+			 (maximizing x)))))
+    (join-two-no-shift join-op step0
+		       (list :step (mapcar (partial #'+ shift)
+					   (second step1))))))
 
 ;;; this assumes each input will start at zero, and hit
 ;;; every level from 0 ... dim of the step-op
@@ -470,15 +489,35 @@
     (recur (tag-keep tree))))
 
 (defmethod bdd-dispatch ((tag (eql :step)) step)
-  (labels ((deriv (lst)
-	       (let* ((arr (coerce lst 'vector))
-		      (inds (iter (for i from 0 below (length arr))
-				  (if (or (zerop i) (= (1- (length arr)) i) (/= (aref arr (1- i))
-										(aref arr (1+ i))))
-				      (collect i)))))
-		 (cons '+ (iter (for i in inds)
-				(collect (cons :step
-					       (iter (for j from 0 below (length arr))
-						     (if (/= i j) (collect (aref arr j)))))))))))
-    (deriv (second step))))
+  (let* ((lst (second step))
+	 (arr (coerce lst 'vector))
+	 (last (1- (length arr)))
+	 (deletables (iter (for i from 0 below (length arr))
+			   (if (and
+				(or (zerop i) (= last i) ;edge cases
+				    (/= (aref arr (1- i))
+					(aref arr (1+ i))))
+				(or (find (aref arr i) arr :end i)
+				    (find (aref arr i) arr :start (1+ i))))
+			       (collect i)))))
+    (cons '+ (iter (for ind in deletables)
+		   (for sgn first 0 then (1+ sgn) )
+		   (collect
+		       (sgn sgn (list :step
+				      (iter (for j from 0 below (length arr))
+					    (if (/= ind j) (collect (aref arr j)))))))))))
+
+(defmethod bdd-dispatch ((tag (eql :tensor)) prod)
+  (let ((arr (coerce (cdr prod) 'vector)))
+    (cons '+
+	  (iter (for i from 0 below (length arr))
+		(collect
+		    (sgn (if (= i 0) 0
+			     (dim (aref arr (1- i)))) ; this may only work in dim=2
+		     (cons :tensor
+			   (iter (for j from 0 below (length arr))
+				 (collect
+				     (if (= i j) (boundary (aref arr j))
+					 (aref arr j)))))))))))
+
 
