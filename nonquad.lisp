@@ -3,12 +3,12 @@
 (defun  permute-step-basis (permutation step)
   (list :step (permute (second permutation) (second step))))
 
-(permute-step-basis '(0 1) '(:step (0 1)))
+(permute-step-basis '(:perm (0 1)) '(:step (0 1)))
 
 (defun permute-step (perm step)
   (call (partial #'permute-step-basis perm) step))
 
-(permute-step '(+ (:perm 0 1)) '(+ (:step (0 1))))
+(permute-step '(+ (:perm (0 1))) '(+ (:step (0 1))))
 
 ;;; degree 4
 (defparameter *pre-flip-deg4*
@@ -64,10 +64,14 @@
 (defparameter *bdd* (mapcar #'boundary *deg5*))
 
 (defun get-leaves (exp)
-  (match exp 
-    ((list* '+ args) (mapcan #'get-leaves args))
-    ((list* :step _) (list exp)) 
-    ((list* _) (get-leaves (cons '+ exp)))))
+  (let (acc)
+    (labels ((walk (exp)
+	       (match exp
+		 ((list :step _) (push exp acc))
+		 ((list* _) (mapc #'walk exp))
+		 (_ nil))))
+      (walk exp))
+    acc))
 
 (defparameter *deg4quad-basis* (remove-duplicates (append *deg4* *bdd*) :test #'equal))
 
@@ -76,43 +80,80 @@
 					       :test #'equal)
 			    'vector))
 
-(defun get-pos (step)
+(defparameter *pretty-basis*
+  (iter (for eqn in
+	     (iter (for eqn in *deg4quad-basis*)
+		   (collect
+		       (match eqn
+			 ((list* '+ vecs) vecs)
+			 (_ (list eqn))))))
+	(collect
+	    (iter (for vec in eqn)
+		  (collect
+		      (match vec
+			((list :step _) (list 1 vec))
+			(_ vec)))))))
+  
+
+(defun lookup (step)
   (position step *all-things* :test #'equal))
 
-(defun translate (steps)
-  (mapcar
-   (lambda (vec)
-     (match vec
-       ((list* :step _) (list (get-pos vec)))
-       ((list* + steps) (mapcar #'get-pos steps))))
-   steps))
-
+(defparameter *nrows* (length *all-things*))
+(defparameter *ncols* (1+ (length *deg4quad-basis*)))
 ;;; row major order
 ;;; row: which step in all-things
-;;; col=pow of 2: component in that row for col-th eqn in basis 
-(defparameter *matrix* (make-array (length *all-things*) :initial-element 0))
-(iter (for eqn in (translate *deg4quad-basis*))
-      (for i first 0 then (1+ i)); pow of 2
-      (iter (for vec in eqn)	 ; vec => row
-	    (incf (aref *matrix* vec) (expt 2 i))))
+;;; col: eqn/basis elt
+(defparameter *matrix* (make-array (list *nrows* *ncols*)
+				   :initial-element 0))
+(iter (for eqn in *pretty-basis*)
+      (for col from 0 below (length *pretty-basis*))
+      (iter (for (a vec) in eqn)
+	    (setf (aref *matrix* (lookup vec ) col) a)))
 
-(incf (aref *matrix* (get-pos '(:step (0 1 0 2 0)))) (expt 2 (length *all-things*)))
+(setf (aref *matrix* (lookup '(:step (0 1 0 2 0))) (1- *ncols*)) 1)
 
-(defun n-bit (x n)
-  (mod (ash x (- n)) 2))
+(defmacro ssetf (&rest args)
+  `(progn
+     ,@(iter (for (x y) on args by #'cddr)
+	     (collect
+		 `(symbol-macrolet ((it ,x))
+		    (setf it ,y))))))
+
+(defmacro sreplace (thing new-thing)
+  `(symbol-macrolet ((it ,thing))
+     (replace it ,new-thing)))
+
+(defun rows (mtx)
+  (destructuring-bind (nrows ncols) (array-dimension mtx)
+    (make-array
+     nrows
+     :initial-contents
+     (iter (for r from 0 below nrows)
+	   (collect
+	       (make-array ncols
+			   :displaced-to *matrix*
+			   :displaced-index-offset (* r ncols)))))))
+
+(defun swap-rows (mtx i j)
+  (if (/= i j)
+   (iter (for k from 0 below (array-dimension mtx 1))
+	 (rotatef (aref mtx i k) (aref mtx j k)))))
 
 (defun gauss-elim (mtx)
-  (let ((len (length mtx)))
-   (iter (for i from 0 below len)
-	 (for pivot-pos = (position-if (lambda (x)
-					 (= (n-bit x i) 1))
-				       mtx 
-				       :start i))
-	 (when pivot-pos
-	   (rotatef (aref mtx i) (aref mtx pivot-pos))
-	   (iter (for j from 0 below len)
-		 (if (and (/= j i)
-			  (= (n-bit (aref mtx j) i) 1))
-		     (setf (aref mtx j) (logxor (aref mtx i) (aref mtx j))))))))
-  mtx)
-
+  (declare (optimize (safety 3) (speed 0) (debug 3)))
+  (destructuring-bind (nrows ncols) (array-dimensions mtx)
+    (let ((rows (rows mtx)))
+     (iter (for i from 0 below (min nrows ncols))
+	   (for pivot-pos = (position-if-not (lambda (x) (zerop (aref x i)))
+					     rows :start i))
+	   (when pivot-pos
+	     (swap-rows mtx i pivot-pos)
+	     (iter (for col from 0 below ncols)
+		   (ssetf (aref mtx i col) (/ it (aref mtx i i))))
+	     (iter (for j from 0 below nrows)
+		   (for leading = (aref mtx j i))
+		   (if (and (/= j i) (not (zerop leading)))
+		       (sreplace (aref rows j)
+				(map 'vector (lambda (x y) (- x (* y leading)))
+				      it (aref rows i)))))))
+     mtx)))

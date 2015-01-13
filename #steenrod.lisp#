@@ -406,7 +406,7 @@
 		 (collect (cons :tensor (mapcar #'make-simplex x))))))
    step-lin-comb))
 
-;;; i need do som'n w/ a sign here i think 
+;;; i need do som'n w/ a sign here i think
 (defun step-act (step-lin-comb simp-lin-comb)
   (call (lambda (simp)
 	  (map-simplex simp
